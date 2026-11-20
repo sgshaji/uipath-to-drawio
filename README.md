@@ -46,6 +46,10 @@ Open the result at [app.diagrams.net](https://app.diagrams.net) (File > Open fro
 | Invoked file that doesn't exist | Dashed red box, marked "missing" |
 | Invoked file outside the project folder | Dashed grey box, marked "outside the project". It is never looked up, and only its file name is shown unless you use `-IncludeDetails` |
 | Link that leads nowhere | Not drawn, and listed as a warning in the report |
+| `.xaml` file that isn't a workflow | A page saying so, and listed in the report |
+| Folder that can't be read, or a link to another folder | Skipped, and listed in the report; the rest of the project is still converted |
+
+If a diagram file can't be written (for example because it is open or read-only), the other files and the report are still written, the report says which file failed and why, and the run ends with exit code 1.
 | Activity the tool doesn't recognise | Dashed grey box with the activity type, and listed in the report |
 
 ## Checking it works

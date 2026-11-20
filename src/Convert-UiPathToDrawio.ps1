@@ -541,6 +541,7 @@ function Read-Workflow {
         ActivityCount = 0
         Summary       = ''
         IsMain        = $false
+        TopElement    = ''          # for a file that is not a workflow: what its top element is
     }
     try {
         $wf.Doc = Read-XmlFile $FullPath
@@ -554,7 +555,25 @@ function Read-Workflow {
     $class = Get-Attr $wf.Doc.DocumentElement 'Class' 'Xaml'
     if ($class) { $wf.Name = $class }
 
-    $wf.Root = Get-ActivityChild $wf.Doc.DocumentElement
+    # A workflow file's top element is <Activity>, holding one activity (sometimes inside an
+    # Activity.Implementation element). A file whose top element is itself a known activity is drawn
+    # from that. Anything else is some other kind of XML, and is reported rather than guessed at.
+    $top = $wf.Doc.DocumentElement
+    if ($top.LocalName -eq 'Activity') {
+        $wf.Root = Get-ActivityChild $top
+        if ($null -eq $wf.Root) {
+            foreach ($impl in (Get-ChildElement $top 'Activity.Implementation')) { $wf.Root = Get-ActivityChild $impl }
+        }
+    }
+    elseif ($script:KnownActivities.Contains($top.LocalName) -and $script:NonActivityNs -notcontains $top.NamespaceURI) {
+        $wf.Root = $top
+    }
+    else {
+        $wf.Kind = 'NotWorkflow'
+        $wf.KindLabel = 'not a workflow'
+        $wf.TopElement = $top.LocalName
+        return $wf
+    }
     if ($null -eq $wf.Root) {
         $wf.Kind = 'Empty'
         $wf.KindLabel = 'empty'
@@ -573,6 +592,7 @@ function Read-Workflow {
 
     # Inventory of activity types, to report the ones the converter doesn't recognise.
     foreach ($e in $wf.Doc.SelectNodes('//*')) {
+        if ((Test-SameNode $e $top) -and $top.LocalName -eq 'Activity') { continue }   # the file's wrapper, not an activity
         $ln = $e.LocalName
         if ($ln.Contains('.')) { continue }
         if ($script:NonActivityNs -contains $e.NamespaceURI) { continue }
@@ -1527,7 +1547,7 @@ function Write-DrawioFile {
         foreach ($page in $Pages) {
             $w.WriteStartElement('diagram')
             $w.WriteAttributeString('id', $page.Id)
-            $w.WriteAttributeString('name', $page.Name)
+            $w.WriteAttributeString('name', (ConvertTo-XmlSafeText $page.Name))
             $w.WriteStartElement('mxGraphModel')
             foreach ($pair in @(@('dx', '1200'), @('dy', '800'), @('grid', '1'), @('gridSize', '10'), @('guides', '1'),
                     @('tooltips', '1'), @('connect', '1'), @('arrows', '1'), @('fold', '1'), @('page', '1'),
@@ -1542,15 +1562,15 @@ function Write-DrawioFile {
                 if ($linked) {
                     # A link lives on a UserObject wrapper; the label moves there too.
                     $w.WriteStartElement('UserObject')
-                    $w.WriteAttributeString('label', [string]$c.Label)
-                    $w.WriteAttributeString('link', $c.Link)
+                    $w.WriteAttributeString('label', (ConvertTo-XmlSafeText ([string]$c.Label)))
+                    $w.WriteAttributeString('link', (ConvertTo-XmlSafeText $c.Link))
                     $w.WriteAttributeString('id', $c.Id)
                     $w.WriteStartElement('mxCell')
                 }
                 else {
                     $w.WriteStartElement('mxCell')
                     $w.WriteAttributeString('id', $c.Id)
-                    $w.WriteAttributeString('value', [string]$c.Label)
+                    $w.WriteAttributeString('value', (ConvertTo-XmlSafeText ([string]$c.Label)))
                 }
                 $w.WriteAttributeString('style', $c.Style)
                 if ($c.Edge) {
@@ -1623,6 +1643,12 @@ function New-WorkflowPage {
         $Workflow.Summary = 'could not be read'
         return $page
     }
+    if ($Workflow.Kind -eq 'NotWorkflow') {
+        $text = "This file is not a UiPath workflow.`nIts top element is <" + $Workflow.TopElement + '>, not <Activity>.'
+        [void](Add-Vertex $page $text $script:Style.Unknown $left $top 320 60)
+        $Workflow.Summary = 'not a workflow (top element <' + $Workflow.TopElement + '>); nothing drawn.'
+        return $page
+    }
 
     $Context.ViewStateMap = New-ViewStateMap $Workflow.Doc
     if ($Workflow.Kind -eq 'StateMachine' -or $Workflow.Kind -eq 'Flowchart') {
@@ -1683,6 +1709,7 @@ function New-ProjectMapPage {
         $style = $script:Style.Workflow
         if ($wf.IsMain) { $style = $script:Style.MainWorkflow }
         if ($wf.Error) { $style = $script:Style.BrokenWorkflow }
+        if ($wf.Kind -eq 'NotWorkflow') { $style = $script:Style.Unknown }
         $node = New-Node ('w' + $i) 'Box' ($wf.Rel + "`n(" + $wf.KindLabel + ')') $style
         if ($LinkPages -and $Context.PageIds.ContainsKey($wf.Key)) { $node.Link = 'data:page/id,' + $Context.PageIds[$wf.Key] }
         $nodes.Add($node)
@@ -1834,6 +1861,19 @@ function Get-ReportText {
 
     Add-Heading $sb ('Files that could not be read (' + $unread.Count + ')')
     if ($unread.Count -eq 0) { [void]$sb.Append('  None' + $nl) } else { foreach ($l in $unread) { [void]$sb.Append($l + $nl) } }
+
+    $notWorkflows = @($Workflows | Where-Object { $_.Kind -eq 'NotWorkflow' })
+    Add-Heading $sb ('Files that are not workflows (' + $notWorkflows.Count + ')')
+    if ($notWorkflows.Count -eq 0) { [void]$sb.Append('  None' + $nl) }
+    else { foreach ($wf in $notWorkflows) { [void]$sb.Append('  ' + $wf.Rel + ': top element is <' + $wf.TopElement + '>, not <Activity>' + $nl) } }
+
+    Add-Heading $sb ('Folders skipped (' + $Context.SkippedFolders.Count + ')')
+    if ($Context.SkippedFolders.Count -eq 0) { [void]$sb.Append('  None' + $nl) }
+    else { foreach ($f in $Context.SkippedFolders) { [void]$sb.Append('  ' + $f.Rel + ': ' + $f.Reason + $nl) } }
+
+    Add-Heading $sb ('Files that could not be written (' + $Context.WriteErrors.Count + ')')
+    if ($Context.WriteErrors.Count -eq 0) { [void]$sb.Append('  None' + $nl) }
+    else { foreach ($f in $Context.WriteErrors) { [void]$sb.Append('  ' + $f.Name + ': ' + $f.Reason + $nl) } }
     return $sb.ToString()
 }
 
@@ -1841,13 +1881,112 @@ function Get-ReportText {
 # Main
 # ---------------------------------------------------------------------------
 
+function Stop-WithError {
+    # Ends the run with a plain one-line message and exit code 1, for problems the user can fix
+    # (a wrong path, a locked file), instead of PowerShell's script-line error display.
+    param([string]$Message)
+    $Host.UI.WriteErrorLine($Message)
+    exit 1
+}
+
 function Get-SafeFileName {
+    # A name that is safe as a file name: no characters Windows rejects, and at most 80 characters,
+    # so a deep folder path flattened into a name cannot push the full path past Windows' limit.
     param([string]$Name)
     $invalid = [System.IO.Path]::GetInvalidFileNameChars()
     $chars = $Name.ToCharArray() | ForEach-Object { if ($invalid -contains $_) { '_' } else { [string]$_ } }
     $safe = (-join $chars).Trim()
+    if ($safe.Length -gt 80) { $safe = $safe.Substring(0, 80).TrimEnd(' ', '.') }
+    $safe = $safe.TrimEnd('.')
     if ([string]::IsNullOrEmpty($safe)) { $safe = 'diagram' }
     return $safe
+}
+
+function Get-WorkflowFiles {
+    # Every .xaml file in the project folder and its subfolders. Skipped, without stopping:
+    #   - folders whose name starts with "." (.local, .settings, .objects ...), which are Studio's own;
+    #   - links to other folders (junctions, symbolic links), which can lead outside or loop;
+    #   - folders that can't be read, which are listed in $Skipped with the reason.
+    param([string]$Root, $Skipped)
+    $found = New-Object System.Collections.Generic.List[object]
+    $pending = New-Object 'System.Collections.Generic.Stack[string]'
+    $pending.Push($Root)
+    while ($pending.Count -gt 0) {
+        $dir = $pending.Pop()
+        try {
+            $items = @(Get-ChildItem -LiteralPath $dir -ErrorAction Stop)
+        }
+        catch {
+            if ($dir -eq $Root) { Stop-WithError ('Cannot read the folder ' + $Root + ': ' + (Get-ReadErrorText $_.Exception)) }
+            $Skipped.Add(@{ Rel = $dir.Substring($Root.TrimEnd('\').Length).TrimStart('\'); Reason = (Get-ReadErrorText $_.Exception) })
+            continue
+        }
+        foreach ($item in $items) {
+            if ($item.PSIsContainer) {
+                if ($item.Name.StartsWith('.')) { continue }
+                # Only real links count. OneDrive and other cloud folders carry the same ReparsePoint
+                # flag as links, so check the kind of link instead.
+                if ($item.LinkType -eq 'Junction' -or $item.LinkType -eq 'SymbolicLink') {
+                    $Skipped.Add(@{ Rel = $item.FullName.Substring($Root.TrimEnd('\').Length).TrimStart('\'); Reason = 'a link to another folder, not followed' })
+                    continue
+                }
+                $pending.Push($item.FullName)
+            }
+            elseif ($item.Extension -eq '.xaml' -and -not $item.Name.StartsWith('~')) {
+                $found.Add($item)
+            }
+        }
+    }
+    return , $found
+}
+
+function ConvertTo-XmlSafeText {
+    # Replaces characters XML cannot hold (control characters, lone surrogates) with U+FFFD, so a
+    # stray character in, say, a project name cannot stop the diagram from being written.
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    if ($Text -notmatch '[\p{Cc}\p{Cs}\p{Cn}]') { return $Text }     # quick check; the loop below decides
+    $sb = New-Object System.Text.StringBuilder
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        $c = $Text[$i]
+        if ([char]::IsHighSurrogate($c) -and $i + 1 -lt $Text.Length -and [char]::IsLowSurrogate($Text[$i + 1])) {
+            [void]$sb.Append($c).Append($Text[$i + 1])
+            $i++
+        }
+        elseif ([System.Xml.XmlConvert]::IsXmlChar($c)) { [void]$sb.Append($c) }
+        else { [void]$sb.Append([char]0xFFFD) }
+    }
+    return $sb.ToString()
+}
+
+function Get-WriteErrorText {
+    # Why a file could not be written, in plain words and without the local path.
+    param($Exception)
+    $e = $Exception
+    while ($null -ne $e) {
+        if ($e -is [System.UnauthorizedAccessException]) { return 'access denied (is the file read-only, or the folder protected?)' }
+        if ($e -is [System.IO.PathTooLongException]) { return 'the full path is too long for Windows' }
+        if ($e -is [System.IO.DirectoryNotFoundException]) { return 'the output folder is missing' }
+        if ($e -is [System.IO.IOException]) { return 'the file is in use by another program, or the disk is full' }
+        $e = $e.InnerException
+    }
+    return 'the file could not be written (' + $Exception.GetType().Name + ')'
+}
+
+function Save-File {
+    # Writes a file safely: first to a temporary file in the same folder, then copied into place.
+    # If anything fails, the temporary file is removed and any existing file is left as it was,
+    # so a failure never leaves a half-written diagram behind. (File.Replace is not used: PowerShell
+    # passes $null to .NET as an empty string, which Replace rejects.)
+    param([string]$Target, [scriptblock]$Writer)
+    $temp = Join-Path (Split-Path -Parent $Target) ('~' + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        & $Writer $temp
+        [System.IO.File]::Copy($temp, $Target, $true)
+    }
+    finally {
+        if ([System.IO.File]::Exists($temp)) { [System.IO.File]::Delete($temp) }
+    }
 }
 
 function Find-ProjectRoot {
@@ -1881,14 +2020,18 @@ function Get-JsonValue {
     return [string]$prop.Value
 }
 
+if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+    Stop-WithError "Path not found: $Path"
+}
 $inputItem = Get-Item -LiteralPath $Path
 $isProject = $inputItem.PSIsContainer
 if (-not $isProject -and $inputItem.Extension -ne '.xaml') {
-    throw "Expected a .xaml file or a UiPath project folder: $Path"
+    Stop-WithError "Expected a .xaml file or a UiPath project folder: $Path"
 }
 
 if ($isProject) {
     $projectRoot = $inputItem.FullName.TrimEnd('\')
+    if ($projectRoot.EndsWith(':')) { $projectRoot += '\' }     # a drive root keeps its backslash
 }
 else {
     $projectRoot = Find-ProjectRoot $inputItem.DirectoryName
@@ -1902,19 +2045,28 @@ $mainKey = ConvertTo-WorkflowKey ($mainKey.Replace('/', '\'))
 
 if (-not $OutputPath) {
     if ($isProject) { $OutputPath = Split-Path -Parent $inputItem.FullName } else { $OutputPath = $inputItem.DirectoryName }
+    if ([string]::IsNullOrEmpty($OutputPath)) { Stop-WithError 'Give -OutputPath when converting a whole drive: there is no folder next to it to write to.' }
 }
 if (-not (Test-Path -LiteralPath $OutputPath)) { [void](New-Item -ItemType Directory -Path $OutputPath) }
 $OutputPath = (Resolve-Path -LiteralPath $OutputPath).ProviderPath
 
-# Collect files. Folders whose name starts with "." (.local, .settings, .objects ...) are Studio's own.
+$context = @{
+    IncludeDetails = [bool]$IncludeDetails
+    PageIds        = @{}
+    MapPageId      = $null
+    ViewStateMap   = @{}
+    Warnings       = (New-Object System.Collections.Generic.List[string])
+    SkippedFolders = (New-Object System.Collections.Generic.List[object])
+    WriteErrors    = (New-Object System.Collections.Generic.List[object])
+}
+
+# Collect files.
 $files = New-Object System.Collections.Generic.List[object]
 if ($isProject) {
-    foreach ($f in (Get-ChildItem -LiteralPath $projectRoot -Recurse -File -Filter '*.xaml')) {
-        $rel = $f.FullName.Substring($projectRoot.Length).TrimStart('\')
-        $hidden = $false
-        foreach ($part in ($rel.Split('\') | Select-Object -SkipLast 1)) { if ($part.StartsWith('.')) { $hidden = $true } }
-        if (-not $hidden) { $files.Add(@{ Full = $f.FullName; Rel = $rel }) }
+    foreach ($f in (Get-WorkflowFiles $projectRoot $context.SkippedFolders)) {
+        $files.Add(@{ Full = $f.FullName; Rel = $f.FullName.Substring($projectRoot.TrimEnd('\').Length).TrimStart('\') })
     }
+    foreach ($s in $context.SkippedFolders) { Write-Warning ('Skipped the folder ' + $s.Rel + ': ' + $s.Reason) }
 }
 else {
     $full = $inputItem.FullName
@@ -1923,7 +2075,7 @@ else {
     else { $rel = $inputItem.Name }
     $files.Add(@{ Full = $full; Rel = $rel })
 }
-if ($files.Count -eq 0) { throw "No .xaml files found in $Path" }
+if ($files.Count -eq 0) { Stop-WithError "No .xaml files found in $Path" }
 
 # Main workflow first, then the rest by path.
 $workflows = New-Object System.Collections.Generic.List[object]
@@ -1961,17 +2113,24 @@ foreach ($wf in $workflows) {
     }
 }
 
-$context = @{
-    IncludeDetails = [bool]$IncludeDetails
-    PageIds        = @{}
-    MapPageId      = $null
-    ViewStateMap   = @{}
-    Warnings       = (New-Object System.Collections.Generic.List[string])
-}
-
 $outputFiles = New-Object System.Collections.Generic.List[string]
 $baseName = Get-SafeFileName $projectName
 if (-not $isProject) { $baseName = Get-SafeFileName ([System.IO.Path]::GetFileNameWithoutExtension($inputItem.Name)) }
+
+function Save-Diagram {
+    # Writes one .drawio file. A failure is recorded for the report, and the other files still get written.
+    param($Pages, [string]$Name)
+    $target = Join-Path $OutputPath ($Name + '.drawio')
+    try {
+        Save-File $target { param($p) Write-DrawioFile $Pages $p }
+        $outputFiles.Add($target)
+    }
+    catch {
+        $reason = Get-WriteErrorText $_.Exception
+        $context.WriteErrors.Add(@{ Name = ($Name + '.drawio'); Reason = $reason })
+        Write-Warning ('Could not write ' + $Name + '.drawio: ' + $reason)
+    }
+}
 
 if ($isProject -and -not $OnePerFile) {
     # One file: project map first, then a page per workflow, linked to each other.
@@ -1982,16 +2141,14 @@ if ($isProject -and -not $OnePerFile) {
     $pages.Add($null)
     foreach ($wf in $workflows) { $pages.Add((New-WorkflowPage $wf $context.PageIds[$wf.Key] $context)) }
     $pages[0] = New-ProjectMapPage $workflows 'map' $projectName $context $true
-    $target = Join-Path $OutputPath ($baseName + '.drawio')
-    Write-DrawioFile $pages $target
-    $outputFiles.Add($target)
+    Save-Diagram $pages $baseName
 }
 else {
     # One file per workflow. Pages in different files can't link to each other.
     # Every output file gets its own name, so one workflow's diagram can never overwrite another's.
     # File names on Windows ignore letter case, so the check does too. The map's name is taken first.
     $usedNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $mapName = $baseName + ' - project map'
+    $mapName = Get-SafeFileName ($baseName + ' - project map')
     if ($isProject) { [void]$usedNames.Add($mapName) }
     foreach ($wf in $workflows) {
         if ($isProject) {
@@ -2006,23 +2163,22 @@ else {
             $unique = $name + '_' + $suffix
             $suffix++
         }
-        $name = $unique
-        $page = New-WorkflowPage $wf 'wf1' $context
-        $target = Join-Path $OutputPath ($name + '.drawio')
-        Write-DrawioFile @($page) $target
-        $outputFiles.Add($target)
+        Save-Diagram @(New-WorkflowPage $wf 'wf1' $context) $unique
     }
     if ($isProject) {
-        $mapPage = New-ProjectMapPage $workflows 'map' $projectName $context $false
-        $target = Join-Path $OutputPath ($mapName + '.drawio')
-        Write-DrawioFile @($mapPage) $target
-        $outputFiles.Add($target)
+        Save-Diagram @(New-ProjectMapPage $workflows 'map' $projectName $context $false) $mapName
     }
 }
 
+# The report is written last, so it can list anything that went wrong while writing the diagrams.
 $reportPath = Join-Path $OutputPath ($baseName + '.conversion-report.txt')
 $reportText = Get-ReportText $workflows $inputItem.FullName $outputFiles $context $(if ($isProject) { $projectName } else { $null })
-[System.IO.File]::WriteAllText($reportPath, $reportText, (New-Object System.Text.UTF8Encoding($false)))
+try {
+    Save-File $reportPath { param($p) [System.IO.File]::WriteAllText($p, $reportText, (New-Object System.Text.UTF8Encoding($false))) }
+}
+catch {
+    Stop-WithError ('Could not write the conversion report ' + (Split-Path -Leaf $reportPath) + ': ' + (Get-WriteErrorText $_.Exception))
+}
 
 foreach ($f in $outputFiles) { Write-Host ('Wrote ' + $f) }
 Write-Host ('Wrote ' + $reportPath)
@@ -2034,9 +2190,16 @@ if ($context.Warnings.Count -gt 0 -or $unknownTotal -gt 0) {
 
 if ($PassThru) {
     [pscustomobject]@{
-        DrawioFiles = $outputFiles.ToArray()
-        ReportFile  = $reportPath
-        Workflows   = $workflows.Count
-        Warnings    = $context.Warnings.ToArray()
+        DrawioFiles    = $outputFiles.ToArray()
+        ReportFile     = $reportPath
+        Workflows      = $workflows.Count
+        Warnings       = $context.Warnings.ToArray()
+        SkippedFolders = @($context.SkippedFolders | ForEach-Object { $_.Rel })
+        WriteErrors    = @($context.WriteErrors | ForEach-Object { $_.Name })
     }
+}
+
+if ($context.WriteErrors.Count -gt 0) {
+    # Everything else was written, including the report; still end with an error so scripts notice.
+    Stop-WithError ('Could not write ' + $context.WriteErrors.Count + ' diagram file(s); everything else was written. See ' + (Split-Path -Leaf $reportPath) + '.')
 }

@@ -530,6 +530,72 @@ try {
     $r = Invoke-Converter @{ Path = (Join-Path $single 'Main.xaml') }
     Assert ($r.DrawioFiles[0] -eq (Join-Path $single 'Main.drawio')) 'writes next to the input by default'
 
+    # --- Robustness: unreadable folders, links, backups, files that are not workflows ------------------
+    Write-Host "`nRobustness"
+    $tough = Join-Path $work 'tough-project'
+    foreach ($dir in @('Ok', 'Locked', 'Linked-target')) { [void](New-Item -ItemType Directory -Path (Join-Path $tough $dir)) }
+    $cleanup = Join-Path $samples 'project\Framework\Cleanup.xaml'
+    Copy-Item $cleanup (Join-Path $tough 'Main.xaml')
+    Copy-Item $cleanup (Join-Path $tough 'Ok\Fine.xaml')
+    Copy-Item $cleanup (Join-Path $tough 'Locked\Secret.xaml')
+    Copy-Item $cleanup (Join-Path $tough '~Main.xaml')                 # a Studio backup of unsaved changes
+    Copy-Item $cleanup (Join-Path $tough 'Linked-target\Twice.xaml')
+    [void](New-Item -ItemType Junction -Path (Join-Path $tough 'Ok\Link') -Target (Join-Path $tough 'Linked-target'))
+    [System.IO.File]::WriteAllText((Join-Path $tough 'Page.xaml'), '<html><head><title>Not a workflow</title></head></html>', (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText((Join-Path $tough 'Bare.xaml'), '<StateMachine xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" DisplayName="Bare"><State DisplayName="Only" /></StateMachine>', (New-Object System.Text.UTF8Encoding($false)))
+    $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $locked = Join-Path $tough 'Locked'
+    [void](& icacls $locked /deny "${me}:(OI)(CI)(RD,RX)")
+    try {
+        $r = Invoke-Converter @{ Path = $tough; OutputPath = (Join-Path $work 'tough-out') }
+    }
+    finally {
+        [void](& icacls $locked /remove:d $me /T /C)
+    }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $pages = @($d.Doc.SelectNodes('/mxfile/diagram') | ForEach-Object { $_.GetAttribute('name') })
+    Assert ($pages -contains 'Ok\Fine.xaml') 'converts the rest of a project when one subfolder cannot be read'
+    Assert ($pages -notcontains 'Locked\Secret.xaml') 'skips the folder it cannot read'
+    Assert ($r.SkippedFolders -contains 'Locked') 'reports the folder it could not read'
+    Assert ($pages -notcontains '~Main.xaml') 'skips Studio''s ~ backup files'
+    Assert (@($pages | Where-Object { $_ -like '*Twice.xaml' }).Count -eq 1) 'does not follow a link to another folder (the linked file appears once, not twice)'
+    $report = [System.IO.File]::ReadAllText($r.ReportFile)
+    Assert ($report -match 'Locked: access denied') 'report says why the folder was skipped'
+    Assert ($report -match 'Ok\\Link: a link to another folder, not followed') 'report lists the link it did not follow'
+    Assert ($report -match 'Page\.xaml: top element is <html>, not <Activity>') 'report says a file is not a workflow'
+    Assert ($report -match 'Bare\.xaml \[?\w*\]? ?- state machine') 'draws a file whose top element is itself a state machine'
+    Assert ($report -notmatch '(?m)^  Activity - ') 'never lists the file''s <Activity> wrapper as an unrecognised activity'
+
+    # --- Writing: re-runs, read-only files, odd names ------------------------------------------------
+    $again = Join-Path $work 'rerun'
+    $first = Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = $again; OnePerFile = $true }
+    $second = Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = $again; OnePerFile = $true }
+    Assert ($second.DrawioFiles.Count -eq 6 -and $second.WriteErrors.Count -eq 0) 'a second run into the same folder overwrites the earlier files'
+    Assert (@(Get-ChildItem -LiteralPath $again -Filter '*.tmp' -Force).Count -eq 0) 'leaves no temporary files behind'
+    $readOnly = Join-Path $again 'Main.drawio'
+    [System.IO.File]::WriteAllText($readOnly, 'kept')
+    (Get-Item -LiteralPath $readOnly).IsReadOnly = $true
+    try {
+        $r = Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = $again; OnePerFile = $true }
+        $code = $LASTEXITCODE
+    }
+    finally {
+        (Get-Item -LiteralPath $readOnly).IsReadOnly = $false
+    }
+    Assert ($code -eq 1) 'ends with exit code 1 when a file cannot be written'
+    Assert ($r.WriteErrors -contains 'Main.drawio' -and $r.DrawioFiles.Count -eq 5) 'still writes the other files when one is read-only'
+    Assert ([System.IO.File]::ReadAllText($readOnly) -eq 'kept') 'leaves the read-only file exactly as it was'
+    Assert ([System.IO.File]::ReadAllText($r.ReportFile) -match 'Main\.drawio: access denied') 'report says which file could not be written, and why'
+    Assert (@(Get-ChildItem -LiteralPath $again -Filter '*.tmp' -Force).Count -eq 0) 'leaves no temporary files behind after a failure'
+
+    $odd = Join-Path $work ('odd-name-project')
+    [void](New-Item -ItemType Directory -Path $odd)
+    Copy-Item $cleanup (Join-Path $odd 'Main.xaml')
+    [System.IO.File]::WriteAllText((Join-Path $odd 'project.json'), ('{ "name": "Bell' + [char]7 + 'Name ' + ('x' * 200) + '" }'), (New-Object System.Text.UTF8Encoding($false)))
+    $r = Invoke-Converter @{ Path = $odd; OutputPath = (Join-Path $work 'odd-name-out') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    Assert ((Split-Path -Leaf $r.DrawioFiles[0]).Length -le 90) 'keeps output file names short, however long the project name'
+
     $before = @(Get-ChildItem -LiteralPath $samples -Recurse -File | ForEach-Object { $_.FullName + '|' + $_.Length + '|' + $_.LastWriteTimeUtc.Ticks })
     [void](Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = (Join-Path $work 'readonly-check') })
     $after = @(Get-ChildItem -LiteralPath $samples -Recurse -File | ForEach-Object { $_.FullName + '|' + $_.Length + '|' + $_.LastWriteTimeUtc.Ticks })
