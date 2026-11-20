@@ -1,0 +1,72 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="BranchLabels"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input. Branch labels kept in the ViewState, where Studio stores them:
+         "Approve?"  TrueLabel "Approve" / FalseLabel "Reject", in the ViewStateManager block at the end
+         "Urgent?"   TrueLabel "Rush", and a FalseLabel of only spaces, which must fall back to "False"
+         "Route"     a switch whose default branch is labelled "Anything else" (DefaultCaseDisplayName)
+       No element has a saved position, so the converter lays the chart out itself. -->
+  <Flowchart DisplayName="Branch labels">
+    <Flowchart.StartNode>
+      <FlowDecision x:Name="__ReferenceID0" DisplayName="Approve?" Condition="[ok]" sap2010:WorkflowViewState.IdRef="FlowDecision_1">
+        <FlowDecision.True>
+          <FlowDecision x:Name="__ReferenceID1" DisplayName="Urgent?" Condition="[urgent]">
+            <sap:WorkflowViewStateService.ViewState>
+              <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                <x:String x:Key="TrueLabel">Rush</x:String>
+                <x:String x:Key="FalseLabel">   </x:String>
+              </scg:Dictionary>
+            </sap:WorkflowViewStateService.ViewState>
+            <FlowDecision.True>
+              <FlowStep x:Name="__ReferenceID2">
+                <Assign DisplayName="Send now" />
+              </FlowStep>
+            </FlowDecision.True>
+            <FlowDecision.False>
+              <FlowSwitch x:TypeArguments="x:String" x:Name="__ReferenceID3" DisplayName="Route" Expression="[team]">
+                <sap:WorkflowViewStateService.ViewState>
+                  <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                    <x:String x:Key="DefaultCaseDisplayName">Anything else</x:String>
+                  </scg:Dictionary>
+                </sap:WorkflowViewStateService.ViewState>
+                <FlowSwitch.Default>
+                  <FlowStep x:Name="__ReferenceID4">
+                    <Assign DisplayName="Send to the general queue" />
+                  </FlowStep>
+                </FlowSwitch.Default>
+                <x:Reference x:Key="Sales">__ReferenceID2</x:Reference>
+              </FlowSwitch>
+            </FlowDecision.False>
+          </FlowDecision>
+        </FlowDecision.True>
+        <FlowDecision.False>
+          <FlowStep x:Name="__ReferenceID5">
+            <Assign DisplayName="Send back" />
+          </FlowStep>
+        </FlowDecision.False>
+      </FlowDecision>
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <x:Reference>__ReferenceID1</x:Reference>
+    <x:Reference>__ReferenceID2</x:Reference>
+    <x:Reference>__ReferenceID3</x:Reference>
+    <x:Reference>__ReferenceID4</x:Reference>
+    <x:Reference>__ReferenceID5</x:Reference>
+  </Flowchart>
+  <sap2010:WorkflowViewState.ViewStateManager>
+    <sap2010:ViewStateManager>
+      <sap2010:ViewStateData Id="FlowDecision_1">
+        <sap:WorkflowViewStateService.ViewState>
+          <scg:Dictionary x:TypeArguments="x:String, x:Object">
+            <x:String x:Key="TrueLabel">Approve</x:String>
+            <x:String x:Key="FalseLabel">Reject</x:String>
+          </scg:Dictionary>
+        </sap:WorkflowViewStateService.ViewState>
+      </sap2010:ViewStateData>
+    </sap2010:ViewStateManager>
+  </sap2010:WorkflowViewState.ViewStateManager>
+</Activity>

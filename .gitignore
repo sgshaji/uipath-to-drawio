@@ -1,0 +1,20 @@
+# Real UiPath files: local checks only, never committed
+private/*
+!private/README.md
+
+# Generated diagrams and reports
+output/*
+!output/README.md
+
+# Editor and OS clutter
+.vscode/*
+!.vscode/extensions.json
+.claude/settings.local.json
+*.bak
+Thumbs.db
+desktop.ini
+.DS_Store
+~$*
+
+# Browser automation leftovers
+.playwright-mcp/

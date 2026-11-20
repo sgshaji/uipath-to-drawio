@@ -1,0 +1,33 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="BrokenLinks"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input. A flowchart with four links that point at names that do not exist
+       (GhostNext, GhostTrue, GhostCase, GhostDefault) and three good links. Each broken link must
+       give a warning; none may vanish silently. The False branch is written as x:Null, which means
+       "no link" and must NOT give a warning. -->
+  <Flowchart DisplayName="Broken links">
+    <Flowchart.StartNode>
+      <FlowDecision x:Name="__ReferenceID0" DisplayName="Ready?" True="{x:Reference GhostTrue}" False="{x:Null}" />
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <FlowStep x:Name="__ReferenceID1">
+      <Assign DisplayName="Lonely step" />
+      <FlowStep.Next>
+        <x:Reference>GhostNext</x:Reference>
+      </FlowStep.Next>
+    </FlowStep>
+    <FlowSwitch x:TypeArguments="x:String" x:Name="__ReferenceID2" DisplayName="Which way?" Default="{x:Reference GhostDefault}">
+      <x:Reference x:Key="left">__ReferenceID1</x:Reference>
+      <x:Reference>GhostCase<x:Key>right</x:Key></x:Reference>
+    </FlowSwitch>
+    <FlowStep x:Name="__ReferenceID3">
+      <Assign DisplayName="Good step" />
+      <FlowStep.Next>
+        <x:Reference>__ReferenceID2</x:Reference>
+      </FlowStep.Next>
+    </FlowStep>
+  </Flowchart>
+</Activity>

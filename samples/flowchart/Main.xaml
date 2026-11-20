@@ -1,0 +1,157 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="SortRequests"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:av="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:demo="clr-namespace:Demo.Activities;assembly=Demo.Activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up sample for uipath-to-drawio. A flowchart with a decision and a switch.
+       Uses the older layout format, where each element carries its own ViewState.
+       "demo:RouteToQueue" is a made-up activity type the converter will not recognise. -->
+  <Flowchart DisplayName="Sort Requests">
+    <Flowchart.Variables>
+      <Variable x:TypeArguments="x:Decimal" Name="amount" />
+      <Variable x:TypeArguments="x:String" Name="region" />
+    </Flowchart.Variables>
+    <sap:WorkflowViewStateService.ViewState>
+      <scg:Dictionary x:TypeArguments="x:String, x:Object">
+        <av:Point x:Key="ShapeLocation">270,2.5</av:Point>
+        <av:Size x:Key="ShapeSize">60,75</av:Size>
+        <av:PointCollection x:Key="ConnectorLocation">300,77.5 300,110</av:PointCollection>
+      </scg:Dictionary>
+    </sap:WorkflowViewStateService.ViewState>
+    <Flowchart.StartNode>
+      <FlowStep x:Name="__ReferenceID0">
+        <sap:WorkflowViewStateService.ViewState>
+          <scg:Dictionary x:TypeArguments="x:String, x:Object">
+            <av:Point x:Key="ShapeLocation">200,110</av:Point>
+            <av:Size x:Key="ShapeSize">200,52</av:Size>
+            <av:PointCollection x:Key="ConnectorLocation">300,162 300,200</av:PointCollection>
+          </scg:Dictionary>
+        </sap:WorkflowViewStateService.ViewState>
+        <Assign DisplayName="Read request details">
+          <Assign.To>
+            <OutArgument x:TypeArguments="x:Decimal">[amount]</OutArgument>
+          </Assign.To>
+          <Assign.Value>
+            <InArgument x:TypeArguments="x:Decimal">[CDec(in_Request("Amount"))]</InArgument>
+          </Assign.Value>
+        </Assign>
+        <FlowStep.Next>
+          <FlowDecision x:Name="__ReferenceID1" DisplayName="Amount over limit?" Condition="[amount &gt; 5000]">
+            <sap:WorkflowViewStateService.ViewState>
+              <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                <av:Point x:Key="ShapeLocation">265,200</av:Point>
+                <av:Size x:Key="ShapeSize">70,70</av:Size>
+                <av:PointCollection x:Key="TrueConnector">265,235 160,235 160,290</av:PointCollection>
+                <av:PointCollection x:Key="FalseConnector">335,235 440,235 440,290</av:PointCollection>
+              </scg:Dictionary>
+            </sap:WorkflowViewStateService.ViewState>
+            <FlowDecision.True>
+              <FlowStep x:Name="__ReferenceID2">
+                <sap:WorkflowViewStateService.ViewState>
+                  <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                    <av:Point x:Key="ShapeLocation">60,290</av:Point>
+                    <av:Size x:Key="ShapeSize">200,52</av:Size>
+                    <av:PointCollection x:Key="ConnectorLocation">160,342 160,606 300,606</av:PointCollection>
+                  </scg:Dictionary>
+                </sap:WorkflowViewStateService.ViewState>
+                <ui:InvokeWorkflowFile DisplayName="Ask manager for approval" WorkflowFileName="Approval\AskManager.xaml" />
+                <FlowStep.Next>
+                  <x:Reference>__ReferenceID6</x:Reference>
+                </FlowStep.Next>
+              </FlowStep>
+            </FlowDecision.True>
+            <FlowDecision.False>
+              <FlowSwitch x:TypeArguments="x:String" x:Name="__ReferenceID3" DisplayName="Which region?" Expression="[region]">
+                <sap:WorkflowViewStateService.ViewState>
+                  <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                    <av:Point x:Key="ShapeLocation">405,290</av:Point>
+                    <av:Size x:Key="ShapeSize">70,70</av:Size>
+                    <av:PointCollection x:Key="NorthConnector">420,360 420,390 380,390 380,420</av:PointCollection>
+                    <av:PointCollection x:Key="SouthConnector">460,360 460,390 560,390 560,420</av:PointCollection>
+                    <av:PointCollection x:Key="Default">475,325 740,325 740,420</av:PointCollection>
+                  </scg:Dictionary>
+                </sap:WorkflowViewStateService.ViewState>
+                <FlowSwitch.Default>
+                  <FlowStep x:Name="__ReferenceID5">
+                    <sap:WorkflowViewStateService.ViewState>
+                      <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                        <av:Point x:Key="ShapeLocation">660,420</av:Point>
+                        <av:Size x:Key="ShapeSize">160,52</av:Size>
+                        <av:PointCollection x:Key="ConnectorLocation">740,472 740,606 500,606</av:PointCollection>
+                      </scg:Dictionary>
+                    </sap:WorkflowViewStateService.ViewState>
+                    <demo:RouteToQueue DisplayName="Send to central team" QueueName="Central" />
+                    <FlowStep.Next>
+                      <x:Reference>__ReferenceID6</x:Reference>
+                    </FlowStep.Next>
+                  </FlowStep>
+                </FlowSwitch.Default>
+                <FlowStep x:Key="North" x:Name="__ReferenceID4">
+                  <sap:WorkflowViewStateService.ViewState>
+                    <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                      <av:Point x:Key="ShapeLocation">300,420</av:Point>
+                      <av:Size x:Key="ShapeSize">160,52</av:Size>
+                      <av:PointCollection x:Key="ConnectorLocation">380,472 380,580</av:PointCollection>
+                    </scg:Dictionary>
+                  </sap:WorkflowViewStateService.ViewState>
+                  <Assign DisplayName="Send to north team">
+                    <Assign.To>
+                      <OutArgument x:TypeArguments="x:String">[team]</OutArgument>
+                    </Assign.To>
+                    <Assign.Value>
+                      <InArgument x:TypeArguments="x:String">North</InArgument>
+                    </Assign.Value>
+                  </Assign>
+                  <FlowStep.Next>
+                    <FlowStep x:Name="__ReferenceID6">
+                      <sap:WorkflowViewStateService.ViewState>
+                        <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                          <av:Point x:Key="ShapeLocation">300,580</av:Point>
+                          <av:Size x:Key="ShapeSize">200,52</av:Size>
+                        </scg:Dictionary>
+                      </sap:WorkflowViewStateService.ViewState>
+                      <ui:LogMessage DisplayName="Write summary to log" Level="Info" Message="[&quot;Request sorted&quot;]" />
+                    </FlowStep>
+                  </FlowStep.Next>
+                </FlowStep>
+                <FlowStep x:Key="South" x:Name="__ReferenceID7">
+                  <sap:WorkflowViewStateService.ViewState>
+                    <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                      <av:Point x:Key="ShapeLocation">480,420</av:Point>
+                      <av:Size x:Key="ShapeSize">160,52</av:Size>
+                      <av:PointCollection x:Key="ConnectorLocation">560,472 560,530 460,530 460,580</av:PointCollection>
+                    </scg:Dictionary>
+                  </sap:WorkflowViewStateService.ViewState>
+                  <Assign DisplayName="Send to south team">
+                    <Assign.To>
+                      <OutArgument x:TypeArguments="x:String">[team]</OutArgument>
+                    </Assign.To>
+                    <Assign.Value>
+                      <InArgument x:TypeArguments="x:String">South</InArgument>
+                    </Assign.Value>
+                  </Assign>
+                  <FlowStep.Next>
+                    <x:Reference>__ReferenceID6</x:Reference>
+                  </FlowStep.Next>
+                </FlowStep>
+              </FlowSwitch>
+            </FlowDecision.False>
+          </FlowDecision>
+        </FlowStep.Next>
+      </FlowStep>
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <x:Reference>__ReferenceID1</x:Reference>
+    <x:Reference>__ReferenceID2</x:Reference>
+    <x:Reference>__ReferenceID3</x:Reference>
+    <x:Reference>__ReferenceID4</x:Reference>
+    <x:Reference>__ReferenceID5</x:Reference>
+    <x:Reference>__ReferenceID6</x:Reference>
+    <x:Reference>__ReferenceID7</x:Reference>
+  </Flowchart>
+</Activity>

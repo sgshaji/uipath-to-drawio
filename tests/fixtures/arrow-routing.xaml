@@ -1,0 +1,60 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="ArrowRouting"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input for the automatic layout. No element has a saved position. It has:
+         - two branches of the switch ("Courier" and Default) leading to the same step;
+         - True and False of a decision leading to the same step;
+         - arrows that skip rows, past other boxes ("Pickup", and "Book courier" to "Close order");
+         - an arrow looping back up ("Close order" to the switch);
+         - a step that leads to itself ("Wait for stock").
+       No arrow may cross a box, no two arrows may share a path, and no labels may overlap. -->
+  <Flowchart DisplayName="Arrow routing">
+    <Flowchart.StartNode>
+      <x:Reference>Carrier</x:Reference>
+    </Flowchart.StartNode>
+    <FlowSwitch x:TypeArguments="x:String" x:Name="Carrier" DisplayName="Which carrier?" Expression="[carrier]">
+      <FlowSwitch.Default>
+        <x:Reference>Courier</x:Reference>
+      </FlowSwitch.Default>
+      <x:Reference x:Key="Post">Post</x:Reference>
+      <x:Reference x:Key="Courier">Courier</x:Reference>
+      <x:Reference x:Key="Pickup">Close</x:Reference>
+      <x:Reference x:Key="Backorder">Wait</x:Reference>
+    </FlowSwitch>
+    <FlowStep x:Name="Post">
+      <Assign DisplayName="Print postage" />
+      <FlowStep.Next>
+        <x:Reference>Weight</x:Reference>
+      </FlowStep.Next>
+    </FlowStep>
+    <FlowStep x:Name="Courier">
+      <Assign DisplayName="Book courier" />
+      <FlowStep.Next>
+        <x:Reference>Close</x:Reference>
+      </FlowStep.Next>
+    </FlowStep>
+    <FlowStep x:Name="Wait">
+      <Assign DisplayName="Wait for stock" />
+      <FlowStep.Next>
+        <x:Reference>Wait</x:Reference>
+      </FlowStep.Next>
+    </FlowStep>
+    <FlowDecision x:Name="Weight" DisplayName="Over the weight limit?" Condition="[heavy]">
+      <FlowDecision.True>
+        <x:Reference>Close</x:Reference>
+      </FlowDecision.True>
+      <FlowDecision.False>
+        <x:Reference>Close</x:Reference>
+      </FlowDecision.False>
+    </FlowDecision>
+    <FlowStep x:Name="Close">
+      <Assign DisplayName="Close order" />
+      <FlowStep.Next>
+        <x:Reference>Carrier</x:Reference>
+      </FlowStep.Next>
+    </FlowStep>
+  </Flowchart>
+</Activity>

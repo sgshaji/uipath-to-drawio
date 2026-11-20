@@ -1,0 +1,21 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="ReadConfig"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up sample. Calls nothing. -->
+  <x:Members>
+    <x:Property Name="out_MaxOrders" Type="OutArgument(x:Int32)" />
+  </x:Members>
+  <Sequence DisplayName="Read config" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <Assign DisplayName="Set order limit" sap2010:WorkflowViewState.IdRef="Assign_1">
+      <Assign.To>
+        <OutArgument x:TypeArguments="x:Int32">[out_MaxOrders]</OutArgument>
+      </Assign.To>
+      <Assign.Value>
+        <InArgument x:TypeArguments="x:Int32">25</InArgument>
+      </Assign.Value>
+    </Assign>
+  </Sequence>
+</Activity>

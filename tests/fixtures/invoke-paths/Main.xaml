@@ -1,0 +1,20 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Main"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input. Invokes one real file four ways, two names Windows rejects, and three paths that lead out of the project. The last one points at a file that really exists next to this folder: it must still be shown as outside the project, which proves it was not looked up. -->
+  <Sequence DisplayName="Invoke paths">
+    <ui:InvokeWorkflowFile DisplayName="Plain" WorkflowFileName="Sub\Helper.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Up and back down" WorkflowFileName="Sub\..\Sub\Helper.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Doubled backslash" WorkflowFileName="Sub\\Helper.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Dot prefixes and a forward slash" WorkflowFileName=".\.\Sub/Helper.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Pipe in the name" WorkflowFileName="Reports|2024.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Angle brackets in the name" WorkflowFileName="Bad&lt;name&gt;.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Network share" WorkflowFileName="\\server.invalid\share\Remote.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Another drive folder" WorkflowFileName="C:\Elsewhere\Other.xaml" />
+    <ui:InvokeWorkflowFile DisplayName="Parent folder" WorkflowFileName="..\broken-links.xaml" />
+  </Sequence>
+</Activity>

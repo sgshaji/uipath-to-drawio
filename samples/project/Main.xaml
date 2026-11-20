@@ -1,0 +1,49 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Main"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up sample for uipath-to-drawio. A flowchart with no saved positions,
+       so the converter has to lay it out itself. The decision's branches are labelled Yes and No,
+       which Studio keeps in the decision's ViewState (not as attributes). -->
+  <Flowchart DisplayName="Order Intake" sap2010:WorkflowViewState.IdRef="Flowchart_1">
+    <Flowchart.Variables>
+      <Variable x:TypeArguments="x:Int32" Name="ordersWaiting" />
+    </Flowchart.Variables>
+    <Flowchart.StartNode>
+      <FlowStep x:Name="__ReferenceID0" sap2010:WorkflowViewState.IdRef="FlowStep_1">
+        <ui:InvokeWorkflowFile DisplayName="Initialize" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_1" WorkflowFileName="Framework\Initialize.xaml" />
+        <FlowStep.Next>
+          <FlowDecision x:Name="__ReferenceID1" DisplayName="Any orders waiting?" Condition="[ordersWaiting &gt; 0]" sap2010:WorkflowViewState.IdRef="FlowDecision_1">
+            <sap:WorkflowViewStateService.ViewState>
+              <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                <x:String x:Key="TrueLabel">Yes</x:String>
+                <x:String x:Key="FalseLabel">No</x:String>
+              </scg:Dictionary>
+            </sap:WorkflowViewStateService.ViewState>
+            <FlowDecision.True>
+              <FlowStep x:Name="__ReferenceID2" sap2010:WorkflowViewState.IdRef="FlowStep_2">
+                <ui:InvokeWorkflowFile DisplayName="Process orders" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_2" WorkflowFileName="ProcessOrders.xaml" />
+                <FlowStep.Next>
+                  <FlowStep x:Name="__ReferenceID3" sap2010:WorkflowViewState.IdRef="FlowStep_3">
+                    <ui:InvokeWorkflowFile DisplayName="Clean up" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_3" WorkflowFileName="Framework\Cleanup.xaml" />
+                  </FlowStep>
+                </FlowStep.Next>
+              </FlowStep>
+            </FlowDecision.True>
+            <FlowDecision.False>
+              <x:Reference>__ReferenceID3</x:Reference>
+            </FlowDecision.False>
+          </FlowDecision>
+        </FlowStep.Next>
+      </FlowStep>
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <x:Reference>__ReferenceID1</x:Reference>
+    <x:Reference>__ReferenceID2</x:Reference>
+    <x:Reference>__ReferenceID3</x:Reference>
+  </Flowchart>
+</Activity>

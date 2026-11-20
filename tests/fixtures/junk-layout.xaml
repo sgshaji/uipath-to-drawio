@@ -1,0 +1,54 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="JunkLayout"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:av="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input: a damaged saved layout. One state's position is NaN, another's size is
+       Infinity, a third sits at 1E300, and a connector has junk points. None of these may reach the
+       diagram; the converter must fall back to automatic layout for the whole state machine. -->
+  <StateMachine DisplayName="Junk layout">
+    <StateMachine.InitialState>
+      <State x:Name="First" DisplayName="First">
+        <sap:WorkflowViewStateService.ViewState>
+          <scg:Dictionary x:TypeArguments="x:String, x:Object">
+            <av:Point x:Key="ShapeLocation">NaN,NaN</av:Point>
+            <av:Size x:Key="ShapeSize">160,80</av:Size>
+          </scg:Dictionary>
+        </sap:WorkflowViewStateService.ViewState>
+        <State.Transitions>
+          <Transition DisplayName="Go on" To="{x:Reference Second}">
+            <sap:WorkflowViewStateService.ViewState>
+              <scg:Dictionary x:TypeArguments="x:String, x:Object">
+                <av:PointCollection x:Key="ConnectorLocation">Infinity,0 NaN,NaN 1E300,5</av:PointCollection>
+              </scg:Dictionary>
+            </sap:WorkflowViewStateService.ViewState>
+          </Transition>
+        </State.Transitions>
+      </State>
+    </StateMachine.InitialState>
+    <State x:Name="Second" DisplayName="Second">
+      <sap:WorkflowViewStateService.ViewState>
+        <scg:Dictionary x:TypeArguments="x:String, x:Object">
+          <av:Point x:Key="ShapeLocation">100,300</av:Point>
+          <av:Size x:Key="ShapeSize">Infinity,80</av:Size>
+        </scg:Dictionary>
+      </sap:WorkflowViewStateService.ViewState>
+      <State.Transitions>
+        <Transition DisplayName="Finish" To="{x:Reference Third}" />
+      </State.Transitions>
+    </State>
+    <State x:Name="Third" DisplayName="Third" IsFinal="True">
+      <sap:WorkflowViewStateService.ViewState>
+        <scg:Dictionary x:TypeArguments="x:String, x:Object">
+          <av:Point x:Key="ShapeLocation">1E300,1E300</av:Point>
+          <av:Size x:Key="ShapeSize">160,80</av:Size>
+        </scg:Dictionary>
+      </sap:WorkflowViewStateService.ViewState>
+    </State>
+    <x:Reference>Second</x:Reference>
+    <x:Reference>Third</x:Reference>
+  </StateMachine>
+</Activity>

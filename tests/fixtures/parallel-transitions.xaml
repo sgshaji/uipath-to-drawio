@@ -1,0 +1,37 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="ParallelTransitions"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input for the automatic layout. No state has a saved position. Five transitions
+       lead from "Collect" to "Check", "Check" has two transitions to itself, and "Report" loops back
+       to "Collect". Every transition must be visible, with its own label. -->
+  <StateMachine DisplayName="Parallel transitions">
+    <StateMachine.InitialState>
+      <State x:Name="Collect" DisplayName="Collect">
+        <State.Transitions>
+          <Transition DisplayName="Form received" To="{x:Reference Check}" />
+          <Transition DisplayName="Email received" To="{x:Reference Check}" />
+          <Transition DisplayName="Call logged" To="{x:Reference Check}" />
+          <Transition DisplayName="Chat closed" To="{x:Reference Check}" />
+          <Transition DisplayName="Letter scanned" To="{x:Reference Check}" />
+        </State.Transitions>
+      </State>
+    </StateMachine.InitialState>
+    <State x:Name="Check" DisplayName="Check">
+      <State.Transitions>
+        <Transition DisplayName="Retry" To="{x:Reference Check}" />
+        <Transition DisplayName="Wait a day" To="{x:Reference Check}" />
+        <Transition DisplayName="Checked" To="{x:Reference Report}" />
+      </State.Transitions>
+    </State>
+    <State x:Name="Report" DisplayName="Report">
+      <State.Transitions>
+        <Transition DisplayName="Next batch" To="{x:Reference Collect}" />
+      </State.Transitions>
+    </State>
+    <x:Reference>Check</x:Reference>
+    <x:Reference>Report</x:Reference>
+  </StateMachine>
+</Activity>

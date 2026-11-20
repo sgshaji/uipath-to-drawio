@@ -1,0 +1,44 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="SwitchCaseForms"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input. A switch whose cases are written in every form the .NET XAML writer uses:
+         apple   key as an attribute, target written inline
+         banana  key as a child element, target written inline
+         cherry  key as an attribute on a reference
+         damson  key as a child element inside a reference (used when a target is shared)
+         elder   the same shared target again
+       plus a default branch. Six branches in all; none may be dropped. -->
+  <Flowchart DisplayName="Sort fruit">
+    <Flowchart.StartNode>
+      <FlowSwitch x:TypeArguments="x:String" x:Name="__ReferenceID0" DisplayName="Which fruit?" Expression="[fruit]">
+        <FlowSwitch.Default>
+          <FlowStep x:Name="__ReferenceID4">
+            <Assign DisplayName="Unknown fruit" />
+          </FlowStep>
+        </FlowSwitch.Default>
+        <FlowStep x:Key="apple" x:Name="__ReferenceID1">
+          <Assign DisplayName="Crate A" />
+        </FlowStep>
+        <FlowStep x:Name="__ReferenceID2">
+          <x:Key>
+            <x:String>banana</x:String>
+          </x:Key>
+          <Assign DisplayName="Crate B" />
+        </FlowStep>
+        <x:Reference x:Key="cherry">__ReferenceID3</x:Reference>
+        <x:Reference>__ReferenceID3<x:Key>damson</x:Key></x:Reference>
+        <x:Reference>__ReferenceID3<x:Key>elder</x:Key></x:Reference>
+      </FlowSwitch>
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <x:Reference>__ReferenceID1</x:Reference>
+    <x:Reference>__ReferenceID2</x:Reference>
+    <FlowStep x:Name="__ReferenceID3">
+      <Assign DisplayName="Crate C" />
+    </FlowStep>
+    <x:Reference>__ReferenceID4</x:Reference>
+  </Flowchart>
+</Activity>

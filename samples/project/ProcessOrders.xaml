@@ -1,0 +1,27 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="ProcessOrders"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up sample. Calls a shared workflow (with a forward slash in the path),
+       a file that does not exist, and a workflow whose file name is worked out at run time. -->
+  <x:Members>
+    <x:Property Name="in_StepFolder" Type="InArgument(x:String)" />
+  </x:Members>
+  <Sequence DisplayName="Process orders" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <ui:InvokeWorkflowFile DisplayName="Read config" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_1" WorkflowFileName="Framework/ReadConfig.xaml" />
+    <ForEach x:TypeArguments="x:String" DisplayName="For each order" sap2010:WorkflowViewState.IdRef="ForEach_1" Values="[orderIds]">
+      <ActivityAction x:TypeArguments="x:String">
+        <ActivityAction.Argument>
+          <DelegateInArgument x:TypeArguments="x:String" Name="orderId" />
+        </ActivityAction.Argument>
+        <Sequence DisplayName="Body" sap2010:WorkflowViewState.IdRef="Sequence_2">
+          <ui:InvokeWorkflowFile DisplayName="Check order" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_2" WorkflowFileName="Steps\CheckOrder.xaml" />
+          <ui:InvokeWorkflowFile DisplayName="Notify" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_3" WorkflowFileName="[in_StepFolder + &quot;\Notify.xaml&quot;]" />
+        </Sequence>
+      </ActivityAction>
+    </ForEach>
+  </Sequence>
+</Activity>
