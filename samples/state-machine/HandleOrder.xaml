@@ -1,0 +1,12 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="HandleOrder"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up sample for uipath-to-drawio. Invoked by Main.xaml; calls nothing. -->
+  <Sequence DisplayName="Handle one order" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <ui:LogMessage DisplayName="Log handle one order" sap2010:WorkflowViewState.IdRef="LogMessage_1" Level="Info" Message="[&quot;Handle one order&quot;]" />
+  </Sequence>
+</Activity>

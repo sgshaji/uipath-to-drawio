@@ -114,7 +114,7 @@ $script:KnownActivities = New-Object 'System.Collections.Generic.HashSet[string]
 $script:Style = @{
     Title          = 'text;fontSize=16;fontStyle=1;align=left;verticalAlign=top;'
     Note           = 'text;fontSize=11;fontColor=#666666;align=left;verticalAlign=top;'
-    BackLink       = 'text;fontSize=11;fontColor=#0050ef;align=right;verticalAlign=top;fontStyle=4;'
+    BackLink       = 'text;fontSize=11;fontColor=#0050ef;align=left;verticalAlign=top;fontStyle=4;'
     Start          = 'ellipse;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;'
     State          = 'rounded=1;arcSize=12;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;'
     StateCard      = 'swimlane;rounded=1;arcSize=12;startSize=28;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;swimlaneFillColor=#ffffff;collapsible=0;'
@@ -1527,9 +1527,9 @@ function Add-GraphToPage {
 
 function Add-PageHeader {
     param($Page, [string]$Title, $Context)
-    [void](Add-Vertex $Page $Title $script:Style.Title 40 16 600 30)
+    [void](Add-Vertex $Page $Title $script:Style.Title 40 16 ((Get-TextSize $Title 10 20).W + 20) 30)
     if ($Context.MapPageId) {
-        [void](Add-Vertex $Page 'Back to project map' $script:Style.BackLink 640 20 160 20 '1' ('data:page/id,' + $Context.MapPageId))
+        [void](Add-Vertex $Page 'Back to project map' $script:Style.BackLink 40 44 160 20 '1' ('data:page/id,' + $Context.MapPageId))
     }
 }
 
@@ -1692,7 +1692,7 @@ function New-WorkflowPage {
 function New-ProjectMapPage {
     param($Workflows, [string]$PageId, [string]$ProjectName, $Context, [bool]$LinkPages)
     $page = New-Page $PageId 'Project map'
-    [void](Add-Vertex $page ('Project map: ' + $ProjectName) $script:Style.Title 40 16 600 30)
+    [void](Add-Vertex $page ('Project map: ' + $ProjectName) $script:Style.Title 40 16 ((Get-TextSize ('Project map: ' + $ProjectName) 10 20).W + 20) 30)
     if ($LinkPages) {
         [void](Add-Vertex $page 'Each box links to its workflow''s page. Arrows show which workflow invokes which.' $script:Style.Note 40 44 600 20)
     }

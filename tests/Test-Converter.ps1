@@ -315,7 +315,13 @@ try {
     $edgeLabels = Get-EdgeLabels $d.Doc
     Assert ($edgeLabels.Count -eq 8) "draws 7 transitions plus the start arrow (found $($edgeLabels.Count))"
     foreach ($t in @('Ready', 'Start-up failed', 'Order found', 'No more orders', 'Done', 'Business error', 'System error')) { Assert ($edgeLabels -contains $t) "labels transition '$t'" }
-    Assert ($labels -contains 'Framework\GetNextOrder.xaml (missing)') 'lists the workflow a state invokes, marked missing when the file is absent'
+    Assert ($labels -contains 'Framework\GetNextOrder.xaml') 'lists the workflow a state invokes'
+    $r2 = Invoke-Converter @{ Path = (Join-Path $samples 'state-machine'); OutputPath = (Join-Path $work 'sm-project') }
+    $d2 = Test-DrawioStructure $r2.DrawioFiles[0]
+    $smPage = $null
+    foreach ($dg in $d2.Doc.SelectNodes('/mxfile/diagram')) { if ($dg.GetAttribute('name') -eq 'Main.xaml') { $smPage = $dg } }
+    $rowLinks = @($smPage.SelectNodes('.//UserObject[@link]') | Where-Object { $_.GetAttribute('label') -like '*.xaml' }).Count
+    Assert ($rowLinks -eq 6) "in a whole-project conversion, each workflow listed in a state links to its page (found $rowLinks of 6)"
     Assert ($d.Text -notmatch 'StartUpError|OrderError') 'leaves transition conditions out by default'
     $finalStyle = ''
     foreach ($c in $d.Doc.SelectNodes('//mxCell[@value="Wrap Up"]')) { $finalStyle = $c.GetAttribute('style') }

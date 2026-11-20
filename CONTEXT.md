@@ -171,5 +171,5 @@ Learned by inspecting a standard REFramework `Main.xaml` (55 KB, 486 elements). 
 
 1. Check flowchart and switch connector keys against a real flowchart saved by Studio (put it in `private/`).
 2. Try a whole real project from `private/`, not just `Main.xaml`, to exercise the project map at size.
-3. Add a README screenshot of a converted sample (export with the desktop app into `docs/`).
+3. Keep the README screenshots in `docs/images/` current: they are exported from the samples with the draw.io desktop app (`draw.io.exe -x -f png -b 16 -s 1.5 -p <page> -o docs/images/<name>.png <file>.drawio`).
 4. Later scope: sequences with automatic layout, then `-MaxDepth`, UI steps as one-line boxes, annotations as notes.
