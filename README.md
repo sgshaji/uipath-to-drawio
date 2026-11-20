@@ -65,6 +65,10 @@ The tests convert the made-up workflows in [samples/](samples/) and the made-up 
 pwsh -File .\tests\Test-Converter.ps1 -CheckFile C:\Diagrams\MyProcess.drawio
 ```
 
+## Licence
+
+[MIT](LICENSE).
+
 ## Not affiliated with UiPath
 
 This is an independent project. "UiPath" is used only to describe the files it reads.

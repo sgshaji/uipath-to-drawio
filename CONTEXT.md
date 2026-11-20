@@ -11,7 +11,7 @@ It is meant to be a standalone, public, open-source project.
 ## Why it exists
 
 - UiPath has no built-in way to export a workflow or project as a diagram. On the UiPath forum, people are told to redraw by hand ([1](https://forum.uipath.com/t/convert-xaml-file-to-diagram/455674), [2](https://forum.uipath.com/t/export-project-to-flowchart/2821428), [3](https://forum.uipath.com/t/how-to-create-vsd-flowchart-mircrosoft-visio-from-uipath-xaml/2801)).
-- Related projects do other things: [flindersuni/rpa-doc](https://github.com/flindersuni/rpa-doc) writes text documentation from XAML; "rpax" ([forum post](https://forum.uipath.com/t/what-would-you-do-with-multi-project-uipath-workflow-data/5253844)) lists Mermaid diagrams but no public repository was found. No XAML → draw.io tool was found (searched November 2026).
+- Related projects do other things: [flindersuni/rpa-doc](https://github.com/flindersuni/rpa-doc) writes text documentation from XAML; "rpax" ([forum post](https://forum.uipath.com/t/what-would-you-do-with-multi-project-uipath-workflow-data/5253844)) is a public CLI ([rpapub/rpax](https://github.com/rpapub/rpax)) that parses UiPath projects into JSON call graphs and diagrams; [marcelocruzrpa/uipath-xaml-viewer](https://github.com/marcelocruzrpa/uipath-xaml-viewer) shows XAML workflows as interactive diagrams on GitHub and GitLab; [AutoFor/uipath-xaml-visualizer](https://github.com/AutoFor/uipath-xaml-visualizer) is another viewer. None of them writes editable draw.io files (checked November 2026).
 - Who it helps: teams documenting robots, reviewers and auditors, and teams moving processes off UiPath (for example to n8n or Power Automate), who need to see what a robot actually does.
 
 The idea came from a real migration of a UiPath process to n8n. **None of that client's material belongs in this repository** (see `CLAUDE.md`).
@@ -161,9 +161,9 @@ Learned by inspecting a standard REFramework `Main.xaml` (55 KB, 486 elements). 
 
 ## Open decisions
 
-- [ ] **Employer policy:** check the rules on personal open-source projects before making the repository public.
-- [ ] **Licence:** MIT recommended. Add `LICENSE` once decided.
-- [ ] **Repository name:** `uipath-to-drawio` for now. Say "for UiPath" descriptively, use no UiPath logo, and state it isn't affiliated with UiPath.
+- [x] **Employer policy:** checked and cleared by the owner (November 2026). The repository is public.
+- [x] **Licence:** MIT (`LICENSE`).
+- [x] **Repository name:** `uipath-to-drawio`, at github.com/sgshaji/uipath-to-drawio. Say "for UiPath" descriptively, use no UiPath logo, and state it isn't affiliated with UiPath.
 - [ ] **Test framework:** Windows ships Pester 3.4; Pester 5 is better but needs installing (developers only). For now the tests are a plain script (see Decisions made); decide before the test suite grows much.
 - [ ] **Task Capture:** UiPath Task Capture can import XAML ([docs](https://docs.uipath.com/task-capture/standalone/2020.10/user-guide/importing-and-editing-a-xaml-file)). Check what it exports, so the README can say how this tool differs.
 
