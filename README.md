@@ -15,8 +15,8 @@ See how a project's workflows invoke one another, review its state machines and 
 ## What you get
 
 - **Editable diagrams:** native `.drawio` shapes and connectors that you can annotate or export in draw.io. Supported diagrams use Studio's saved layout when available, otherwise an automatic layout.
-- **A project map:** see which workflow invokes which, with links to workflow pages inside the generated file.
-- **A conversion report:** identify summary-only workflows, missing references, unrecognised activity types and read or write failures before relying on the diagrams.
+- **A project map:** see which workflow invokes which, with links to workflow pages inside the generated file. Large projects are wrapped onto several rows to keep the map readable.
+- **A conversion report:** identify summary-only workflows, missing references, activities from custom or third-party packages, and read or write failures before relying on the diagrams.
 
 ## Supported content
 
@@ -29,7 +29,7 @@ Support depends on the workflow's **top-level activity**, not just its `.xaml` e
 | Project workflow calls | A map of `InvokeWorkflowFile` references. Missing, external and runtime-computed targets are marked rather than guessed. |
 | Sequence, If, Try/Catch, loops and other top-level activities | A summary listing the workflows they invoke, not a step-by-step diagram. |
 | Nested flowcharts or state machines | Not expanded into their own diagrams. |
-| Unrecognised flowchart step activities | Plain labelled boxes; unrecognised activity types are listed in the report. |
+| Flowchart steps using activities from custom or third-party packages | Plain dashed boxes showing the activity type; the report lists each such type with its package. |
 | Coded workflows (`.cs`), Invoke Process and Run Parallel Process | Coded workflows are not converted; these other process-starting activities do not create project-map links. |
 
 For sequence-heavy projects, the project map can still help you understand dependencies, but it will not show the detailed business logic. See the [usage guide](docs/usage.md) for how each case is represented.
@@ -50,7 +50,7 @@ Open either image for a larger view, or see the [flowchart example](docs/images/
 - **To convert:** Windows with Windows PowerShell 5.1 (included in Windows 10 and 11) or PowerShell 7. No UiPath installation, credentials or extra runtime dependencies are needed.
 - **To view and edit:** the [draw.io desktop app](https://www.drawio.com), [app.diagrams.net](https://app.diagrams.net), or Visual Studio Code with the [Draw.io Integration extension](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio).
 
-**UiPath compatibility:** automated tests cover made-up XAML workflows and both saved-layout formats. They do not establish coverage across every UiPath Studio release or project compatibility type (Windows, Windows-Legacy and cross-platform). Try a representative project and check the report before relying on the output. The converter itself is Windows-only.
+**UiPath compatibility:** automated tests cover made-up XAML workflows and both saved-layout formats. A [compatibility run](docs/compatibility-report.md) over 93 public projects, from Studio 2018 to 2026, converted every project in both PowerShell versions; it also found that only 10% of real workflows are drawn in detail, because most are sequences. No cross-platform projects were available to test. Try a representative project and check the report before relying on the output. The converter itself is Windows-only.
 
 ## Quick start
 
@@ -86,7 +86,7 @@ output\demo\OrderIntakeDemo.drawio
 output\demo\OrderIntakeDemo.conversion-report.txt
 ```
 
-The diagram has a project map and five workflow pages. Four of those workflow pages are summaries. The sample deliberately includes a missing workflow, a runtime-computed file name and an unrecognised activity so you can see how incomplete information is reported.
+The diagram has a project map and five workflow pages. Four of those workflow pages are summaries. The sample deliberately includes a missing workflow, a runtime-computed file name and an activity from a made-up third-party package, so you can see how incomplete information is reported.
 
 ### 3. Open the diagram and review the report
 

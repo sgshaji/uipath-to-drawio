@@ -46,21 +46,23 @@ Summary pages are intentional, not evidence that the workflow has no business lo
 - Each step is named after its activity:
   - an Invoke Workflow File step names the invoked file;
   - a sequence or other container lists workflows invoked inside it, without expanding its activities;
-  - an unrecognised step activity shows its type in a plain dashed box, and its type is listed in the report;
+  - a step whose activity comes from neither a UiPath package nor .NET's Workflow Foundation (for example, a project's own library or a third-party package) shows its activity type in a plain dashed box. The report lists each such type with its package;
   - a nested flowchart or state machine is not expanded; this is noted in the report.
-- Decisions are diamonds with the branch labels saved in Studio, such as Yes and No, or True and False when no labels are saved.
+- Decisions are diamonds with the branch labels saved in Studio, such as Yes and No, or True and False when no labels are saved. As in Studio, the decision's text sits below the diamond; when an arrow meets the diamond's bottom point, the text moves to the lower right so the arrow does not run through it.
 - Switches are diamonds with case names and a default branch. The default label comes from Studio when available, otherwise it is Default.
 - A connection that points to a step that does not exist is not drawn and produces a report warning.
 
 ### Layout
 
-The converter reads both inline ViewState and the separate ViewStateManager layout format. When every node has a usable saved position, those relative positions are retained. The layout may be stretched horizontally and vertically to fit longer labels.
+The converter reads both inline ViewState and the separate ViewStateManager layout format. When every node has a usable saved position, those relative positions and Studio's arrow routes are retained. The layout may be stretched horizontally and vertically to fit longer labels.
+
+Arrow labels normally sit halfway along their arrows. Where Studio's routes run close together, a label that would land on another label, a box or a decision's text is moved along its own arrow to the nearest clear place. Boxes and routes are never moved for this. A long label on a short arrow can still touch a nearby box when no clear place exists.
 
 If any node's position is missing or damaged, the whole diagram uses an automatic top-to-bottom layout instead. Arrows are routed around boxes, with separate routes for parallel connections. The report states which layout was used.
 
 ## Workflow links
 
-The converter reads **Invoke Workflow File** activities and resolves literal file names relative to the project root, not the calling file's folder. Both slash styles in XAML paths are accepted.
+The converter reads **Invoke Workflow File** activities and resolves literal file names relative to the project root, not the calling file's folder. This follows UiPath's documentation for the activity, which says the file path "is relative to the current project folder". A workflow that names a file relative to its own folder is therefore reported as missing, even if such a file exists there. Both slash styles in XAML paths are accepted.
 
 | State | Meaning | Representation |
 | --- | --- | --- |
@@ -71,6 +73,14 @@ The converter reads **Invoke Workflow File** activities and resolves literal fil
 | Set at run time | The target is an expression, so the converter cannot resolve it without execution. | Dashed grey, marked "file name set at run time". `-IncludeDetails` shows the expression. |
 
 The project map has one box per converted workflow and an arrow for each caller/callee pair. Repeated invokes of the same target are counted on the arrow, for example "x3".
+
+The map is laid out top to bottom, callers above the workflows they invoke. In large projects it is kept to a readable width:
+
+- A row wider than about 1,600 pixels is wrapped onto several rows. Workflows that invoke nothing go in the upper rows, and workflows whose arrows continue further down go in the lowest one.
+- An arrow that must pass rows on its way down drops through a gap left between boxes, like the trunk of an organisation chart. Arrows from the same workflow share that trunk.
+- Workflows that neither invoke nor are invoked by any other converted workflow are placed in rows of their own at the bottom.
+
+An arrow only goes round the side of the map when an invoke leads back up, for example when two workflows invoke each other.
 
 Only Invoke Workflow File creates these links. Invoke Process and Run Parallel Process are not followed. Coded workflows (`.cs`) are not converted; invoked names that do not end in `.xaml` are treated as set at run time.
 
@@ -100,8 +110,8 @@ The converter writes each file to a temporary file in the output folder before c
 | Invoked workflows not found | Missing targets and the workflows that invoke them. |
 | Invoked files outside the project folder | Targets deliberately not looked up; their existence is unknown. |
 | File names set at run time, so not linked | Targets that cannot be resolved without evaluating an expression. |
-| Activity types not recognised | Types the converter does not recognise and how often each appears. |
-| Not drawn in version 1 | Summary-only workflows and activities inside states that were not expanded. |
+| Activities by source | Activity counts grouped by where each type comes from: UiPath packages, Workflow Foundation (part of .NET), and other libraries or packages. Types from other libraries are listed one by one with their package, count and the files that use them (the first five, then a count of the rest). Grouping by source does not mean the converter understands what an activity does. |
+| Not drawn in version 1 | Summary-only workflows and activities inside states that were not expanded, with how many activities each leaves out. |
 | Warnings | Unresolved diagram connections, missing start nodes and nested diagrams that were not expanded. |
 | Files that could not be read | Read failures, such as malformed XML or access denied. |
 | Files that are not workflows | Files with a `.xaml` extension that contain other kinds of XML. |
@@ -120,7 +130,7 @@ The report avoids absolute input and output paths in its header, but retains fil
 | White box | A flowchart step. |
 | Purple box | A step that invokes a workflow. |
 | Grey box with a header | A container or summary page listing invoked workflows. |
-| Dashed grey box showing a type in brackets | An unrecognised flowchart step activity. |
+| Dashed grey box showing a type in brackets | A flowchart step whose activity comes from another library or package (not UiPath or Workflow Foundation). |
 | Yellow diamond | A flow decision. |
 | Orange diamond | A flow switch. |
 | Blue box on the project map | A workflow. The main workflow has a thick border; an unreadable file is red. |
@@ -137,7 +147,7 @@ The report avoids absolute input and output paths in its header, but retains fil
 | A diagram opens as XML in Visual Studio Code | Install the Draw.io Integration extension, or open it in the draw.io desktop app. |
 | A page lists invoked workflows but has no individual steps | Its top-level activity is summary-only. See [supported content](../README.md#supported-content); `-IncludeDetails` does not enable deeper rendering. |
 | A workflow is missing from the output | Check the [scanning rules](#finding-workflows) and skipped-folder report. Single-file conversion includes only the selected file. |
-| The layout differs from Studio | Longer labels can stretch a saved layout. Any missing or damaged node position makes the whole diagram use automatic layout. |
+| The layout differs from Studio | Longer labels can stretch a saved layout, and crowded arrow labels are moved along their arrows. Any missing or damaged node position makes the whole diagram use automatic layout. |
 
 Where your execution policy permits a per-process override, you can run the sample in a separate Windows PowerShell process without changing the machine-wide policy:
 

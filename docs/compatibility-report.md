@@ -1,6 +1,6 @@
 # Compatibility report: public UiPath projects
 
-**Tested: 22 November 2026.** Converter: commit `4cbcf07` plus the two reliability fixes described below (in review, not yet committed). Windows 11, PowerShell 7.7 and Windows PowerShell 5.1. All figures come from a from-scratch run of [`tests/compatibility/Invoke-CompatibilityRun.ps1`](../tests/compatibility/Invoke-CompatibilityRun.ps1) over the pinned corpus.
+**Tested: 22 November 2026.** First run: commit `4cbcf07`, which led to fixes R1 and R2 (commit `818850a`). Re-run after the R4, R5 and R6 changes, with the converter as committed alongside this version of the report. Windows 11, PowerShell 7.7 and Windows PowerShell 5.1. All figures come from a from-scratch run of [`tests/compatibility/Invoke-CompatibilityRun.ps1`](../tests/compatibility/Invoke-CompatibilityRun.ps1) over the pinned corpus.
 
 ## Terms used in this report
 
@@ -86,23 +86,46 @@ Inside these workflows there are 3,303 sequences, 925 If, 456 Try/Catch, 285 loo
 | File names with non-ASCII characters (Swedish, Korean, Japanese) | Converted correctly |
 | Unreadable files, files that are not workflows, folders skipped | None in this corpus |
 
-**Invoked files reported missing (15):** each was checked against the whole repository. 13 are genuinely absent, typically REFramework's `Framework` files left out of an upload. 2 are ambiguous (R7).
+**Invoked files reported missing (15):** each was checked against the whole repository. 13 are genuinely absent, typically REFramework's `Framework` files left out of an upload. The other 2 name a file relative to the calling workflow's folder; under UiPath's documented rule they are missing too (R7).
 
 **File names set at run time (16):** all are VB expressions that build the file name from data, as REFramework's test runner does. Reporting them as unknown is correct.
 
-**Visual review:** the largest state machine, flowchart and project map were rendered with the draw.io desktop app and inspected. Findings R4 and R5 come from that review.
+**Visual review:** the largest state machine, flowchart and project map were rendered with the draw.io desktop app and inspected. Findings R4 and R5 come from that review, and their fixes were checked the same way.
 
 ## Reliability issues, in priority order
 
 | ID | Priority | Issue | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| **R1** | **P0** | **A whole project failed to convert** because an activity had a property named `Attributes`. PowerShell lets an XML attribute hide the element property of the same name, so the converter got text instead of the attribute list. Any activity property named like an XML property (`Attributes`, `ChildNodes`, `ParentNode`, `InnerText` and others) could do this. | `fc205/DependencyViewer` (Get XML Node Attributes activity). Reproduced with a made-up test input. | **Fixed, in review.** XML properties are now read through .NET's accessors. Test added. All 93 projects convert, and the diagrams of the other 92 are byte-identical to before. |
-| **R2** | **P1** | **The report listed expressions as unrecognised activities.** C# projects give every expression element a layout ID, so `CSharpValue` and `CSharpReference` were counted as activities, as were Multiple Assign items (`AssignOperation`). | In the first runs, 49 of 93 projects' lists got shorter after the fix; 23 C# projects were affected. | **Fixed, in review.** Test added. |
-| **R3** | **P1** | **Most workflows get only a summary page.** | 593 of 657 workflows; 63 of 93 projects have no detailed diagram. | Open: the sequence roadmap in [architecture-exploration.md](architecture-exploration.md#7-roadmap-detailed-uipath-sequence-support). |
-| **R4** | P2 | **Large project maps are hard to read.** Workflows used by several callers are pushed to the bottom row, so arrows skip rows and are routed round side lanes, and the map becomes very wide. | `Sundsvallskommun/RPA-elevresor`: 33 boxes and 37 arrows, 9 of them round side lanes; the map is 5,265 pixels wide. | Open. Proposed: place each workflow by its shortest distance from the main workflow, and wrap very wide rows. |
-| **R5** | P2 | **Labels collide on some Studio-layout diagrams.** Where Studio's own routes run close together, their labels overlap. Decision labels, drawn below the diamond as in Studio, can overlap outgoing arrows. One state listing many workflows stretches the whole layout, making every state tall. | `GirishKolhe/RPA_UiPath-Generate-Yearly-Report` (state machine: three transition labels overlap); `tosigoto/UiPath-SimpleOCR` (flowchart: decision labels over arrows). | Open. Proposed: move labels along the route to a clear spot; grow a crowded box instead of stretching the whole layout. |
-| **R6** | P2 | **The "Activity types not recognised" list is long and alarming.** It lists every activity not on a short built-in list (258 distinct types, such as Browser Scope and Element Exists), although this only matters where they appear as flowchart steps. | Every project with UI or Excel automation. | Open. Proposed: list only the types actually drawn as unrecognised boxes, and summarise the rest. |
-| **R7** | P3 | **Invoke paths written relative to the calling file are reported missing.** In a repository holding several projects under one `project.json`, some workflows invoke files relative to their own folder. The converter follows UiPath's documented rule (relative to the project folder); whether Studio falls back to the calling file's folder is unverified. | `DongJoonHan/RPA`: 2 invokes. | Open. Proposed: when a file is missing, say in the report if it exists relative to the calling file. |
+| **R1** | **P0** | **A whole project failed to convert** because an activity had a property named `Attributes`. PowerShell lets an XML attribute hide the element property of the same name, so the converter got text instead of the attribute list. Any activity property named like an XML property (`Attributes`, `ChildNodes`, `ParentNode`, `InnerText` and others) could do this. | `fc205/DependencyViewer` (Get XML Node Attributes activity). Reproduced with a made-up test input. | **Fixed** (commit `818850a`). XML properties are now read through .NET's accessors. Test added. All 93 projects convert, and the diagrams of the other 92 are byte-identical to before. |
+| **R2** | **P1** | **The report listed expressions as unrecognised activities.** C# projects give every expression element a layout ID, so `CSharpValue` and `CSharpReference` were counted as activities, as were Multiple Assign items (`AssignOperation`). | In the first runs, 49 of 93 projects' lists got shorter after the fix; 23 C# projects were affected. | **Fixed** (commit `818850a`). Test added. |
+| **R3** | **P1** | **Most workflows get only a summary page.** | 593 of 657 workflows; 63 of 93 projects have no detailed diagram. | Open: the sequence roadmap in [architecture-exploration.md](architecture-exploration.md#8-plan-detailed-uipath-sequence-support). |
+| **R4** | P2 | **Large project maps are hard to read.** Workflows used by several callers are pushed to the bottom row, so arrows skip rows and are routed round side lanes, and the map becomes very wide. | `Sundsvallskommun/RPA-elevresor`: 33 boxes and 37 arrows, 9 of them round side lanes; the map is 5,265 pixels wide. | **Fixed.** Rows wider than about 1,600 pixels wrap onto several rows; arrows that pass rows drop through gaps between boxes instead of side lanes; workflows with no arrows go to the bottom. See [R4 comparison](#r4-layout-approaches-compared). Across the corpus, maps wider than 2,000 pixels fell from 19 to 0 (widest 5,331 to 1,769), arrow crossings from 980 to 609, and maps with arrows routed outside the boxes from 17 to 5. None of the remaining 5 is a side lane: each is a trunk running in the gap at the end of a row, within 40 pixels of the outermost box. Wrapped maps are taller (19 maps more than 1.5 times taller). |
+| **R5** | P2 | **Labels collide on some Studio-layout diagrams.** Where Studio's own routes run close together, their labels overlap. Decision labels, drawn below the diamond as in Studio, can overlap outgoing arrows. One state listing many workflows stretches the whole layout, making every state tall. | `GirishKolhe/RPA_UiPath-Generate-Yearly-Report` (state machine: three transition labels overlap); `tosigoto/UiPath-SimpleOCR` (flowchart: decision labels over arrows). | **Partly fixed.** A label that would land on another label, a box or a decision's text is moved along its own arrow to the nearest clear place; a decision's text moves to the lower right when an arrow meets the diamond's bottom point. Label overlaps on Studio-layout pages fell from 10 to 2 across the corpus; 13 pages changed, and only in label placement. **Remaining:** a long label on a short arrow can still touch a box when no clear place exists (2 pages); one crowded state still stretches the whole layout. |
+| **R6** | P2 | **The "Activity types not recognised" list is long and alarming.** It lists every activity not on a short built-in list (258 distinct types, such as Browser Scope and Element Exists), although this only matters where they appear as flowchart steps. | Every project with UI or Excel automation. | **Fixed.** The report now groups activities by source: UiPath packages, Workflow Foundation (part of .NET), and other libraries or packages, with a count per type. Only the last group is listed one by one, with its package and the files that use it; across the corpus it holds 140 uses, mainly projects' own libraries. Nothing is hidden: every activity is counted in one group. Flowchart steps from UiPath packages (such as Digitize Document) are no longer drawn as unknown boxes (2 diagrams changed). Summary pages now say how many activities they leave out. |
+| **R7** | P3 | **Invoke paths written relative to the calling file are reported missing.** In a repository holding several projects under one `project.json`, some workflows invoke files relative to their own folder. The converter follows UiPath's documented rule (relative to the project folder); whether Studio falls back to the calling file's folder is unverified. | `DongJoonHan/RPA`: 2 invokes. | **Investigated; no change.** UiPath's documentation for Invoke Workflow File says: "The file path is relative to the current project folder." It documents no fallback to the calling file's folder, and its error messages treat a path outside the project as a failure. The converter already follows the documented rule, so these invokes are correctly reported missing. Forum reports (2025) agree but are not authoritative. |
+
+## R4: layout approaches compared
+
+The project map's automatic layout puts each workflow in a row by its longest call path from the top. In the 11 widest maps, one row held 11 to 18 workflows, most of them invoking nothing further, plus a few workflows connected to nothing at all. Approaches considered:
+
+| Approach | Tried | Result |
+| --- | --- | --- |
+| A. Previous layout | Baseline | Wide, short maps; long arrows go round side lanes. |
+| B. Rank by shortest path from Main instead of longest | Not built | Moves workflows between rows but does not reduce how many share a row, so on its own it does not fix the width. |
+| C. Wrap wide rows, keep side lanes | Not built | Every arrow into a lower wrapped row would become a side-lane arrow, which is the other half of the problem. |
+| **D. Wrap wide rows; arrows pass rows through gaps between boxes; unconnected workflows to the bottom** | **Built (chosen)** | See below. |
+| D + crossing reduction (reorder rows towards linked boxes) | Built, then removed | Cut row-to-row crossings but not drawn crossings, which come mostly from the horizontal tracks between rows. Worse than D on 6 of 11 maps. |
+| E. Full layered layout with crossing minimisation and coordinate assignment | Not built | Large change for a small project; revisit only if D proves insufficient. |
+
+Measured on the 11 widest maps (sums over all 11; "outside" counts arrows with any point beyond the outermost boxes):
+
+| | Arrow crossings | Arrows outside the boxes | Total arrow length (pixels) |
+| --- | --- | --- | --- |
+| A. Previous | 528 | 26 | 354,696 |
+| D. Chosen | 368 | 12 | 169,467 |
+| D + crossing reduction | 398 | 32 | 196,637 |
+
+D is deterministic: it uses only the input's order and fixed rules, so PowerShell 5.1 and 7 give byte-identical files. It applies to the project map only. Flowchart and state-machine pages are laid out as before.
 
 ## Supported project types, as tested
 
