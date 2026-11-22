@@ -1126,10 +1126,13 @@ function Get-FlowchartGraph {
 # documentation, when it runs (for each item; for each row; while the condition holds, checked before or
 # after each run; again after an error or an unmet condition). Retry counts are not shown: what the
 # number means differs between versions of the activity.
-# Break, Continue, Throw, Rethrow and Terminate Workflow end the path: no arrow leaves them, so nothing
-# drawn after them in the same sequence has an arrow in. A sequence ends the path if one of its own
-# activities does; a decision does if every branch does. Try Catch regions and loop bodies do not pass
-# this on: an exception may be caught, and Break and Continue act only inside their loop.
+# Break, Continue, Return, Throw, Rethrow and Terminate Workflow end the path: no arrow leaves them, so
+# nothing drawn after them in the same sequence has an arrow in. A sequence ends the path if one of its
+# own activities does; a decision does if every branch does, and then its branches have no dot to meet
+# at. An arrow means "this may run next". So a Try Catch, or a loop that may run zero times, keeps the
+# arrow after it: an exception may be caught, and Break and Continue act only inside their loop. A Do
+# While, whose body runs at least once, ends the path when its body always leaves the whole flow
+# (Return, Throw, Rethrow, Terminate Workflow).
 # Nothing else is expanded: any other activity that holds activities (Try Catch, loops, scopes, and
 # containers from other packages) is drawn as one dashed box saying what it is and how many activities
 # it holds, and listing the workflows invoked inside it. Conditions are never evaluated; they are shown
@@ -1140,10 +1143,14 @@ function Get-FlowchartGraph {
 $script:PathEnds = @{
     'UiPath|Break'                         = 'exits the loop'
     'UiPath|Continue'                      = 'skips the rest of this iteration'
+    'UiPath|Return'                        = 'ends the workflow without an error'
     'WorkflowFoundation|Throw'             = 'throws an exception'
     'WorkflowFoundation|Rethrow'           = 'rethrows the exception'
     'WorkflowFoundation|TerminateWorkflow' = 'ends the workflow'
 }
+# Of those, the ones that act only inside their loop. The others leave the whole flow: control does not
+# come back to the loop around them.
+$script:LoopExits = @('UiPath|Break', 'UiPath|Continue')
 $script:MaxSequenceDepth = 8     # sequences nested deeper than this are collapsed, not drawn
 $script:FrameHeader = 26
 $script:SequencePad = 20
@@ -1181,7 +1188,7 @@ function New-SequenceItem {
     return @{
         Element = $Element; Type = $Type; Source = $Source; Label = $Label
         Shape = 'Box'; Role = 'step'; Link = $null; Children = $null; Rows = $null
-        Inside = 0; Reason = ''; Counts = $Counts; EndsPath = $false
+        Inside = 0; Reason = ''; Counts = $Counts; EndsPath = $false; LeavesFlow = $false
         Diamond = $null; Branches = $null; Join = $null; BusY = 0.0; JoinBusY = 0.0; Sections = $null
         X = 0.0; Y = 0.0; W = 0.0; H = 0.0
     }
@@ -1212,7 +1219,11 @@ function Set-BranchBlock {
         $Item.Branches.Add(@{ Label = $b.Label; Item = $sub; ColW = 0.0; ColX = 0.0 })
     }
     $Item.EndsPath = ($Item.Branches.Count -gt 0)
-    foreach ($b in $Item.Branches) { if ($null -eq $b.Item -or -not $b.Item.EndsPath) { $Item.EndsPath = $false } }
+    $Item.LeavesFlow = $Item.EndsPath
+    foreach ($b in $Item.Branches) {
+        if ($null -eq $b.Item -or -not $b.Item.EndsPath) { $Item.EndsPath = $false; $Item.LeavesFlow = $false }
+        elseif (-not $b.Item.LeavesFlow) { $Item.LeavesFlow = $false }
+    }
     return $Item
 }
 
@@ -1296,7 +1307,7 @@ function Get-SequenceItem {
         foreach ($c in $children) {
             $child = Get-SequenceItem $c ($Depth + 1) $Context $InvokeByElement
             $item.Children.Add($child)
-            if ($child.EndsPath) { $item.EndsPath = $true }
+            if ($child.EndsPath -and -not $item.EndsPath) { $item.EndsPath = $true; $item.LeavesFlow = $child.LeavesFlow }
         }
         return $item
     }
@@ -1339,7 +1350,10 @@ function Get-SequenceItem {
                 $item.Sections.Add(@{ Header = 'Body: runs while the Condition is true; the Condition is checked before each run'; Item = (& $sub (Get-LoopPart $Element @($type + '.Body') -Content)) })
             }
             { $_ -eq 'DoWhile' -or $_ -eq 'InterruptibleDoWhile' } {
-                $item.Sections.Add(@{ Header = 'Body: runs once, then again while the Condition is true; the Condition is checked after each run'; Item = (& $sub (Get-LoopPart $Element @($type + '.Body') -Content)) })
+                $body = & $sub (Get-LoopPart $Element @($type + '.Body') -Content)
+                $item.Sections.Add(@{ Header = 'Body: runs once, then again while the Condition is true; the Condition is checked after each run'; Item = $body })
+                # The body runs at least once; if it always leaves the whole flow, nothing after the loop runs.
+                if ($null -ne $body -and $body.EndsPath -and $body.LeavesFlow) { $item.EndsPath = $true; $item.LeavesFlow = $true }
                 if ($Context.IncludeDetails) {
                     $cond = Get-ExpressionText $Element 'Condition' ($type + '.Condition')
                     if ($cond) { $item.Sections.Add(@{ Header = 'Condition (checked after each run of the Body)'; Item = $null; Text = $cond }) }
@@ -1496,6 +1510,7 @@ function Get-SequenceItem {
         $item.Role = 'pathEnd'
         $item.Label = $item.Label + "`n(" + $script:PathEnds[$source + '|' + $type] + ')'
         $item.EndsPath = $true
+        $item.LeavesFlow = ($script:LoopExits -notcontains ($source + '|' + $type))
     }
     return $item
 }
@@ -1627,7 +1642,9 @@ function Add-SequenceItem {
             if ($null -ne $b.Item) { $branchIds.Add((Add-SequenceItem $Page $b.Item $id)) } else { $branchIds.Add('') }
         }
         $j = $Item.Join
-        $joinId = Add-Vertex $Page '' (Get-NodeStyle @{ Role = 'join'; Kind = 'Join'; LabelSide = $null }) $j.X $j.Y $j.W $j.H $id
+        $joinId = $null
+        # Every branch ends the path: nothing meets again, so no dot.
+        if (-not $Item.EndsPath) { $joinId = Add-Vertex $Page '' (Get-NodeStyle @{ Role = 'join'; Kind = 'Join'; LabelSide = $null }) $j.X $j.Y $j.W $j.H $id }
         $cx = $Item.W / 2
         $fromY = $dm.Y + $dm.H
         for ($i = 0; $i -lt $Item.Branches.Count; $i++) {

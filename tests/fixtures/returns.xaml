@@ -1,0 +1,90 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Returns"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:s="clr-namespace:System;assembly=mscorlib"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input: where a path ends. An arrow means "this may run next". In order:
+         1  an If whose Else returns: its Then still meets the dot, and the sequence carries on
+         2  an If whose branches both end (Return, Terminate Workflow): no dot, and no arrow after it
+         3  a sequence after that If: nothing leads to it
+         4  a For Each whose body may return: the loop may run zero times, so the arrow after it stays
+         5  a Do While whose body always returns: the body runs at least once, so nothing after it runs
+         6  a Try Catch whose Try returns: an exception may be caught, so the arrow after it stays
+         7  a While whose body breaks: Break acts only inside the loop, so the arrow after it stays
+         8  an ordinary step
+         9  a Return as the last step
+       26 activities below the top-level sequence, all drawn. -->
+  <Sequence DisplayName="Check and finish" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <If Condition="[hasWork]" DisplayName="Is there work?" sap2010:WorkflowViewState.IdRef="If_1">
+      <If.Then>
+        <Sequence DisplayName="Do it" sap2010:WorkflowViewState.IdRef="Sequence_2">
+          <Assign DisplayName="Work" sap2010:WorkflowViewState.IdRef="Assign_1" />
+        </Sequence>
+      </If.Then>
+      <If.Else>
+        <ui:Return DisplayName="Nothing to do" sap2010:WorkflowViewState.IdRef="Return_1" />
+      </If.Else>
+    </If>
+    <If Condition="[stopNow]" DisplayName="Both stop?" sap2010:WorkflowViewState.IdRef="If_2">
+      <If.Then>
+        <ui:Return DisplayName="Stop A" sap2010:WorkflowViewState.IdRef="Return_2" />
+      </If.Then>
+      <If.Else>
+        <TerminateWorkflow DisplayName="Shut down" sap2010:WorkflowViewState.IdRef="TerminateWorkflow_1" />
+      </If.Else>
+    </If>
+    <Sequence DisplayName="After both" sap2010:WorkflowViewState.IdRef="Sequence_3">
+      <Assign DisplayName="Unreachable step" sap2010:WorkflowViewState.IdRef="Assign_2" />
+    </Sequence>
+    <ui:ForEach x:TypeArguments="x:Object" DisplayName="For each file" Values="[files]" sap2010:WorkflowViewState.IdRef="ForEach`1_1">
+      <ui:ForEach.Body>
+        <ActivityAction x:TypeArguments="x:Object">
+          <ActivityAction.Argument>
+            <DelegateInArgument x:TypeArguments="x:Object" Name="file" />
+          </ActivityAction.Argument>
+          <Sequence DisplayName="Handle a file" sap2010:WorkflowViewState.IdRef="Sequence_4">
+            <If Condition="[file.IsBad]" DisplayName="Bad file?" sap2010:WorkflowViewState.IdRef="If_3">
+              <If.Then>
+                <ui:Return DisplayName="Give up" sap2010:WorkflowViewState.IdRef="Return_3" />
+              </If.Then>
+            </If>
+            <Assign DisplayName="Use the file" sap2010:WorkflowViewState.IdRef="Assign_3" />
+          </Sequence>
+        </ActivityAction>
+      </ui:ForEach.Body>
+    </ui:ForEach>
+    <DoWhile Condition="[again]" DisplayName="Try once" sap2010:WorkflowViewState.IdRef="DoWhile_1">
+      <Sequence DisplayName="Once" sap2010:WorkflowViewState.IdRef="Sequence_5">
+        <Assign DisplayName="Attempt" sap2010:WorkflowViewState.IdRef="Assign_4" />
+        <ui:Return DisplayName="Done" sap2010:WorkflowViewState.IdRef="Return_4" />
+      </Sequence>
+    </DoWhile>
+    <TryCatch DisplayName="Guarded return" sap2010:WorkflowViewState.IdRef="TryCatch_1">
+      <TryCatch.Try>
+        <ui:Return DisplayName="Return inside the Try" sap2010:WorkflowViewState.IdRef="Return_5" />
+      </TryCatch.Try>
+      <TryCatch.Catches>
+        <Catch x:TypeArguments="s:Exception" sap2010:WorkflowViewState.IdRef="Catch`1_1">
+          <ActivityAction x:TypeArguments="s:Exception">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+            </ActivityAction.Argument>
+            <ui:LogMessage DisplayName="Log it" sap2010:WorkflowViewState.IdRef="LogMessage_1" />
+          </ActivityAction>
+        </Catch>
+      </TryCatch.Catches>
+    </TryCatch>
+    <ui:InterruptibleWhile Condition="[more]" DisplayName="Loop with a break" sap2010:WorkflowViewState.IdRef="InterruptibleWhile_1">
+      <ui:InterruptibleWhile.Body>
+        <Sequence DisplayName="Loop body" sap2010:WorkflowViewState.IdRef="Sequence_6">
+          <ui:Break DisplayName="Leave the loop" sap2010:WorkflowViewState.IdRef="Break_1" />
+        </Sequence>
+      </ui:InterruptibleWhile.Body>
+    </ui:InterruptibleWhile>
+    <Assign DisplayName="Final step" sap2010:WorkflowViewState.IdRef="Assign_5" />
+    <ui:Return DisplayName="Last" sap2010:WorkflowViewState.IdRef="Return_6" />
+  </Sequence>
+</Activity>

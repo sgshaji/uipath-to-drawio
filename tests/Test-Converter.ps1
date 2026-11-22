@@ -1107,6 +1107,55 @@ try {
     $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'loops.xaml'); OutputPath = (Join-Path $work 'loops-again') }
     Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with loops comes out the same every time'
 
+    # --- Where a path ends: Return, and the other exits ---------------------------------------------
+    Write-Host "`nPath ends"
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'returns.xaml'); OutputPath = (Join-Path $work 'returns') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $page = $d.Doc.SelectNodes('/mxfile/diagram')[0]
+    $frameProblems = Get-FrameProblems $page
+    Assert ($frameProblems.Count -eq 0) ('returns: every shape inside its container, no overlaps' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
+    Assert ([System.IO.File]::ReadAllText($r.ReportFile) -match 'Activities drawn: 26 of 26\.') 'report counts the activities drawn (26 of 26)'
+    $info = @{}
+    foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) { $ci = Get-CellInfo $c; $info[$ci.Id] = $ci }
+    $edges = @($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]'))
+    function Get-Id($First) {
+        # The shape whose label starts with this line; for a decision, its block.
+        $cell = @($info.Values | Where-Object { $_.Vertex -and ([string]$_.Label -split "`n")[0] -eq $First })[0]
+        if ($cell.Style -like 'rhombus;*') { return $cell.Parent }
+        return $cell.Id
+    }
+    function Test-Arrow($From, $To) { return (@($edges | Where-Object { $_.GetAttribute('source') -eq (Get-Id $From) -and $_.GetAttribute('target') -eq (Get-Id $To) }).Count -eq 1) }
+    function Get-Out($From) { return @($edges | Where-Object { $_.GetAttribute('source') -eq (Get-Id $From) }).Count }
+    function Get-In($To) { return @($edges | Where-Object { $_.GetAttribute('target') -eq (Get-Id $To) }).Count }
+    $returns = @($info.Values | Where-Object { [string]$_.Label -like "*`n(ends the workflow without an error)" })
+    Assert ($returns.Count -eq 6) "every Return says it ends the workflow without an error (found $($returns.Count) of 6)"
+    $fromReturns = @($edges | Where-Object { $returns.Id -contains $_.GetAttribute('source') }).Count
+    Assert ($fromReturns -eq 0) "no arrow leaves a Return (found $fromReturns)"
+    Assert ((Test-Arrow 'Is there work?' 'Both stop?')) 'an If with one branch returning: the sequence carries on after it'
+    $joinOf = { param($Decision) @($info.Values | Where-Object { $_.Parent -eq (Get-Id $Decision) -and $_.Style -like 'ellipse;fillColor=#666666;*' }) }
+    Assert (@(& $joinOf 'Is there work?').Count -eq 1 -and (Get-In 'Do it') -eq 1 -and (Get-Out 'Do it') -eq 1) 'its Then branch still meets the dot'
+    Assert (@(& $joinOf 'Both stop?').Count -eq 0) 'an If whose branches all end the path has no meeting dot'
+    Assert ((Get-Out 'Both stop?') -eq 0 -and (Get-In 'After both') -eq 0) 'nothing after that If is drawn as reachable'
+    Assert ((Get-Out 'Shut down') -eq 0 -and [string]$info[(Get-Id 'Shut down')].Label -eq "Shut down`n(ends the workflow)") 'Terminate Workflow is still marked and has no arrow out'
+    Assert ((Test-Arrow 'After both' 'For each file')) 'the unreachable sequence still leads on to what follows it'
+    Assert ((Test-Arrow 'For each file' 'Try once')) 'a For Each may run zero times, so the arrow after it stays'
+    Assert (@(& $joinOf 'Bad file?').Count -eq 1 -and (Test-Arrow 'Bad file?' 'Use the file')) 'inside a loop, a Return in one branch leaves the other path joining'
+    Assert ((Get-Out 'Try once') -eq 0 -and (Get-In 'Guarded return') -eq 0) 'a Do While whose body always returns: nothing after it is reachable'
+    Assert ((Test-Arrow 'Attempt' 'Done')) 'inside the Do While, the step before the Return leads to it'
+    Assert ((Test-Arrow 'Guarded return' 'Loop with a break')) 'a Try Catch keeps the arrow after it: an exception may be caught'
+    Assert ((Get-Out 'Leave the loop') -eq 0 -and (Test-Arrow 'Loop with a break' 'Final step')) 'Break ends its loop body only: the arrow after the loop stays'
+    Assert ((Test-Arrow 'Final step' 'Last')) 'a Return as the last step is reached normally'
+    $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'returns.xaml'); OutputPath = (Join-Path $work 'returns-again') }
+    Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with path ends comes out the same every time'
+    # The other exits, on the earlier fixtures.
+    $bd = Read-Drawio (Invoke-Converter @{ Path = (Join-Path $fixtures 'branches.xaml'); OutputPath = (Join-Path $work 'ends-branches') }).DrawioFiles[0]
+    $reject = @($bd.Doc.SelectNodes('//mxCell[@vertex="1"]') | Where-Object { $_.GetAttribute('value') -eq "Reject the order`n(throws an exception)" })
+    Assert ($reject.Count -eq 1 -and @($bd.Doc.SelectNodes('//mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('source') -eq $reject[0].GetAttribute('id') }).Count -eq 0) 'Throw in a branch: marked, and no arrow to the dot'
+    $td = Read-Drawio (Invoke-Converter @{ Path = (Join-Path $fixtures 'try-catch.xaml'); OutputPath = (Join-Path $work 'ends-try') }).DrawioFiles[0]
+    $pass = @($td.Doc.SelectNodes('//mxCell[@vertex="1"]') | Where-Object { $_.GetAttribute('value') -eq "Pass it on`n(rethrows the exception)" })
+    $giveUp = @($td.Doc.SelectNodes('//mxCell[@vertex="1"]') | Where-Object { $_.GetAttribute('value') -eq "Give up`n(throws an exception)" })
+    Assert ($pass.Count -eq 1 -and $giveUp.Count -eq 1 -and @($td.Doc.SelectNodes('//mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('source') -eq $pass[0].GetAttribute('id') -or $_.GetAttribute('source') -eq $giveUp[0].GetAttribute('id') }).Count -eq 0) 'Rethrow and Throw: marked, and no arrow out'
+
     # --- Regression baseline: state machine, flowchart and project map pages, byte for byte --------
     Write-Host "`nRegression baseline"
     $protected = @('state machine', 'flowchart', 'project map')
