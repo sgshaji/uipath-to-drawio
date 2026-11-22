@@ -10,7 +10,7 @@
        In order:
          1-2  single activities (Workflow Foundation, UiPath)
          3    a nested sequence holding an invoke and an empty sequence
-         4    an If with an invoke inside: not expanded; the invoke is listed on its box
+         4    an If: drawn with its Then branch (a sequence holding an invoke) and its Else branch
          5    a Try Catch: not expanded
          6    a Comment Out holding an invoke: its activities do not run, and the box must say so
          7    an activity from a made-up package: shown with its type
@@ -18,7 +18,7 @@
          9    sequences nested ten deep: those past the depth limit are collapsed into one box
          10   an activity with no display name and no layout ID: still drawn, under its type
        31 activities below the top-level sequence are counted (the Delay has neither a display name
-       nor a layout ID, so it is drawn but not counted); 18 are drawn and 13 are inside collapsed boxes. -->
+       nor a layout ID, so it is drawn but not counted); 22 are drawn and 9 are inside collapsed boxes. -->
   <Sequence DisplayName="Handle a request" sap2010:WorkflowViewState.IdRef="Sequence_1">
     <Sequence.Variables>
       <Variable x:TypeArguments="x:String" Name="request" />

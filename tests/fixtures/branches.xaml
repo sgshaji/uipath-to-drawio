@@ -1,0 +1,134 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Branches"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input: If, Else If and Switch inside a sequence. In order:
+         1  an If whose Then is a sequence holding another If (that one has no Else)
+         2  an If with no Then
+         3  an If with neither Then nor Else
+         4  a Switch on text: cases North, South (a sequence holding a Try Catch), West (empty,
+            written as x:Null), East (key written as an element), and a Default
+         5  a Switch on numbers with no Default
+         6  an Else If: If, Else If with nothing in it, Else If holding a sequence, and Else
+         7  an Else If with one condition and no Else
+         8  Ifs nested ten deep: those past the depth limit are collapsed
+         9  an If whose Then is a Try Catch (not expanded)
+       44 activities below the top-level sequence; 37 are drawn and 7 are inside collapsed boxes.
+       16 decisions are drawn with their branches: If x12, IfElseIf x2, Switch x2. -->
+  <Sequence DisplayName="Route an order" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <If Condition="[order.IsValid]" DisplayName="Is the order valid?" sap2010:WorkflowViewState.IdRef="If_1">
+      <If.Then>
+        <Sequence DisplayName="Accept" sap2010:WorkflowViewState.IdRef="Sequence_2">
+          <Assign DisplayName="Mark accepted" sap2010:WorkflowViewState.IdRef="Assign_1" />
+          <If Condition="[order.Total &gt; 1000]" DisplayName="Is it large?" sap2010:WorkflowViewState.IdRef="If_2">
+            <If.Then>
+              <ui:InvokeWorkflowFile DisplayName="Ask for approval" WorkflowFileName="Approval\Ask.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_1" />
+            </If.Then>
+          </If>
+        </Sequence>
+      </If.Then>
+      <If.Else>
+        <Throw DisplayName="Reject the order" sap2010:WorkflowViewState.IdRef="Throw_1" />
+      </If.Else>
+    </If>
+    <If DisplayName="Has a discount?" sap2010:WorkflowViewState.IdRef="If_3">
+      <If.Condition>
+        <InArgument x:TypeArguments="x:Boolean">[order.HasDiscount]</InArgument>
+      </If.Condition>
+      <If.Else>
+        <Assign DisplayName="Charge full price" sap2010:WorkflowViewState.IdRef="Assign_2" />
+      </If.Else>
+    </If>
+    <If Condition="[order.IsEmpty]" DisplayName="Nothing to do?" sap2010:WorkflowViewState.IdRef="If_4" />
+    <Switch x:TypeArguments="x:String" DisplayName="Which region?" Expression="[order.Region]" sap2010:WorkflowViewState.IdRef="Switch`1_1">
+      <Switch.Default>
+        <ui:LogMessage DisplayName="Unknown region" sap2010:WorkflowViewState.IdRef="LogMessage_1" />
+      </Switch.Default>
+      <Assign x:Key="North" DisplayName="Use the north team" sap2010:WorkflowViewState.IdRef="Assign_3" />
+      <Sequence x:Key="South" DisplayName="South handling" sap2010:WorkflowViewState.IdRef="Sequence_3">
+        <TryCatch DisplayName="Try the south service" sap2010:WorkflowViewState.IdRef="TryCatch_1">
+          <TryCatch.Try>
+            <Sequence DisplayName="Call" sap2010:WorkflowViewState.IdRef="Sequence_4">
+              <Assign DisplayName="Call the service" sap2010:WorkflowViewState.IdRef="Assign_4" />
+            </Sequence>
+          </TryCatch.Try>
+        </TryCatch>
+        <ui:LogMessage DisplayName="Note the south route" sap2010:WorkflowViewState.IdRef="LogMessage_2" />
+      </Sequence>
+      <x:Null x:Key="West" />
+      <Assign DisplayName="Use the east team" sap2010:WorkflowViewState.IdRef="Assign_5">
+        <x:Key>East</x:Key>
+      </Assign>
+    </Switch>
+    <Switch x:TypeArguments="x:Int32" DisplayName="How many items?" Expression="[order.Count]" sap2010:WorkflowViewState.IdRef="Switch`1_2">
+      <Assign x:Key="1" DisplayName="One item" sap2010:WorkflowViewState.IdRef="Assign_6" />
+      <Assign x:Key="2" DisplayName="Two items" sap2010:WorkflowViewState.IdRef="Assign_7" />
+    </Switch>
+    <ui:IfElseIf DisplayName="Choose the shipping" sap2010:WorkflowViewState.IdRef="IfElseIf_1">
+      <ui:IfElseIf.ConditionBlocks>
+        <scg:List x:TypeArguments="ui:IfElseIfBlock" Capacity="4">
+          <ui:IfElseIfBlock BlockType="If" Condition="[order.Weight &lt; 1]">
+            <ui:IfElseIfBlock.Then>
+              <Assign DisplayName="Ship by air" sap2010:WorkflowViewState.IdRef="Assign_8" />
+            </ui:IfElseIfBlock.Then>
+          </ui:IfElseIfBlock>
+          <ui:IfElseIfBlock BlockType="ElseIf" Condition="[order.Weight &lt; 5]" />
+          <ui:IfElseIfBlock BlockType="ElseIf" Condition="[order.IsCoastal]">
+            <ui:IfElseIfBlock.Then>
+              <Sequence DisplayName="Ship by sea" sap2010:WorkflowViewState.IdRef="Sequence_5">
+                <Assign DisplayName="Book a ship" sap2010:WorkflowViewState.IdRef="Assign_9" />
+              </Sequence>
+            </ui:IfElseIfBlock.Then>
+          </ui:IfElseIfBlock>
+          <ui:IfElseIfBlock BlockType="Else">
+            <ui:IfElseIfBlock.Then>
+              <Assign DisplayName="Ship by road" sap2010:WorkflowViewState.IdRef="Assign_10" />
+            </ui:IfElseIfBlock.Then>
+          </ui:IfElseIfBlock>
+        </scg:List>
+      </ui:IfElseIf.ConditionBlocks>
+    </ui:IfElseIf>
+    <ui:IfElseIf DisplayName="Choose a carrier" sap2010:WorkflowViewState.IdRef="IfElseIf_2">
+      <ui:IfElseIf.ConditionBlocks>
+        <scg:List x:TypeArguments="ui:IfElseIfBlock" Capacity="1">
+          <ui:IfElseIfBlock BlockType="If" Condition="[order.IsLocal]">
+            <ui:IfElseIfBlock.Then>
+              <Assign DisplayName="Use carrier A" sap2010:WorkflowViewState.IdRef="Assign_11" />
+            </ui:IfElseIfBlock.Then>
+          </ui:IfElseIfBlock>
+        </scg:List>
+      </ui:IfElseIf.ConditionBlocks>
+    </ui:IfElseIf>
+    <If Condition="[a1]" DisplayName="Level 1?" sap2010:WorkflowViewState.IdRef="If_11"><If.Then>
+    <If Condition="[a2]" DisplayName="Level 2?" sap2010:WorkflowViewState.IdRef="If_12"><If.Then>
+    <If Condition="[a3]" DisplayName="Level 3?" sap2010:WorkflowViewState.IdRef="If_13"><If.Then>
+    <If Condition="[a4]" DisplayName="Level 4?" sap2010:WorkflowViewState.IdRef="If_14"><If.Then>
+    <If Condition="[a5]" DisplayName="Level 5?" sap2010:WorkflowViewState.IdRef="If_15"><If.Then>
+    <If Condition="[a6]" DisplayName="Level 6?" sap2010:WorkflowViewState.IdRef="If_16"><If.Then>
+    <If Condition="[a7]" DisplayName="Level 7?" sap2010:WorkflowViewState.IdRef="If_17"><If.Then>
+    <If Condition="[a8]" DisplayName="Level 8?" sap2010:WorkflowViewState.IdRef="If_18"><If.Then>
+    <If Condition="[a9]" DisplayName="Level 9?" sap2010:WorkflowViewState.IdRef="If_19"><If.Then>
+    <If Condition="[a10]" DisplayName="Level 10?" sap2010:WorkflowViewState.IdRef="If_20"><If.Then>
+      <Assign DisplayName="Innermost" sap2010:WorkflowViewState.IdRef="Assign_12" />
+    </If.Then></If></If.Then></If></If.Then></If></If.Then></If></If.Then></If>
+    </If.Then></If></If.Then></If></If.Then></If></If.Then></If></If.Then></If>
+    <If Condition="[needsRetry]" DisplayName="Retry needed?" sap2010:WorkflowViewState.IdRef="If_5">
+      <If.Then>
+        <TryCatch DisplayName="Try again" sap2010:WorkflowViewState.IdRef="TryCatch_2">
+          <TryCatch.Try>
+            <Sequence DisplayName="Again" sap2010:WorkflowViewState.IdRef="Sequence_6">
+              <Assign DisplayName="Repeat the call" sap2010:WorkflowViewState.IdRef="Assign_13" />
+            </Sequence>
+          </TryCatch.Try>
+        </TryCatch>
+      </If.Then>
+      <If.Else>
+        <ui:LogMessage DisplayName="No retry" sap2010:WorkflowViewState.IdRef="LogMessage_3" />
+      </If.Else>
+    </If>
+  </Sequence>
+</Activity>

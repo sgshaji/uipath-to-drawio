@@ -137,7 +137,7 @@ foreach ($p in $rows) {
         Id = $id; Repository = $p.Repository; ProjectPath = $p.ProjectPath; Commit = $p.Commit
         StudioVersion = $p.StudioVersion; TargetFramework = $p.TargetFramework; ExpressionLanguage = $p.ExpressionLanguage; OutputType = $p.OutputType
         Fetched = $false; Complete = $false; MissingFromDownload = 0; XamlFiles = 0; Exit7 = ''; Exit51 = ''; Seconds7 = ''; Seconds51 = ''; Error = ''
-        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; SequencePages = 0; ActivitiesTotal = 0; ActivitiesDrawn = 0; FullyDrawn = 0; StudioLayout = 0; AutoLayout = 0
+        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; SequencePages = 0; ActivitiesTotal = 0; ActivitiesDrawn = 0; FullyDrawn = 0; Decisions = ''; NotExpanded = ''; StudioLayout = 0; AutoLayout = 0
         Missing = 0; Outside = 0; RunTime = 0; UnrecognisedTypes = ''; Warnings = 0; Unreadable = 0; NotWorkflows = 0; SkippedFolders = 0
         CheckProblems = 0; CheckDetails = ''
     }
@@ -204,6 +204,24 @@ foreach ($p in $rows) {
             $row.ActivitiesTotal += [int]$m.Groups[2].Value
             if ($m.Groups[1].Value -eq $m.Groups[2].Value -and $w -notmatch 'summary page only') { $row.FullyDrawn++ }
         }
+        # Sequence pages: "N decisions drawn with their branches (If x3, Switch)" and
+        # "N activities holding others not expanded (TryCatch x2, ...)". Kept as "Type=count; ..." lists.
+        $decisions = @{}
+        $opaque = @{}
+        foreach ($w in $workflows) {
+            foreach ($pair in @(@('drawn with (?:its|their) branches \(([^)]*)\)', $decisions), @('holding others not expanded \(([^)]*)\)', $opaque))) {
+                $m = [regex]::Match($w, $pair[0])
+                if (-not $m.Success) { continue }
+                foreach ($part in $m.Groups[1].Value.Split(',')) {
+                    $x = [regex]::Match($part.Trim(), '^(.*?)(?: x(\d+))?$')
+                    $count = 1
+                    if ($x.Groups[2].Success) { $count = [int]$x.Groups[2].Value }
+                    $pair[1][$x.Groups[1].Value] = $count + [int]$pair[1][$x.Groups[1].Value]
+                }
+            }
+        }
+        $row.Decisions = (@($decisions.Keys | Sort-Object | ForEach-Object { $_ + '=' + $decisions[$_] }) -join '; ')
+        $row.NotExpanded = (@($opaque.Keys | Sort-Object | ForEach-Object { $_ + '=' + $opaque[$_] }) -join '; ')
         $row.StudioLayout = @($workflows | Where-Object { $_ -match 'layout saved in Studio' }).Count
         $row.AutoLayout = @($workflows | Where-Object { $_ -match 'laid out automatically' }).Count
         $row.Missing = @(Get-Section $report 'Invoked workflows not found').Count
@@ -264,6 +282,23 @@ $pageHashes | Export-Csv @csvOptions
 # Only complete downloads that converted in both versions count towards the totals below.
 $ok = @($results | Where-Object { $_.Complete -and $_.Exit7 -eq 0 -and $_.Exit51 -eq 0 })
 $sum = { param($name) [int](($ok | Measure-Object -Property $name -Sum).Sum) }
+$kinds = {
+    # Totals of a "Type=count; Type=count" column across projects, largest first.
+    param($name)
+    $all = @{}
+    foreach ($r in $ok) {
+        foreach ($part in ([string]$r.$name).Split(';')) {
+            if (-not $part.Trim()) { continue }
+            $kv = $part.Trim().Split('=')
+            $all[$kv[0]] = [int]$kv[1] + [int]$all[$kv[0]]
+        }
+    }
+    $total = 0
+    foreach ($v in $all.Values) { $total += $v }
+    $list = @($all.Keys | Sort-Object @{ Expression = { -$all[$_] } }, @{ Expression = { $_ } } | ForEach-Object { $_ + ' ' + $all[$_] })
+    if ($list.Count -eq 0) { return '0' }
+    return "$total (" + ($list -join ', ') + ')'
+}
 $incomplete = @($results | Where-Object { $_.Fetched -and -not $_.Complete })
 $lines = @(
     "Projects listed: $($results.Count); fetched: $(@($results | Where-Object Fetched).Count); complete downloads: $(@($results | Where-Object Complete).Count)"
@@ -274,6 +309,8 @@ $lines = @(
     "Workflows: $(& $sum 'Workflows'); state machines drawn: $(& $sum 'StateMachines'); flowcharts drawn: $(& $sum 'Flowcharts'); summary only: $(& $sum 'SummaryOnly')"
     "Sequence pages (steps drawn top to bottom): $(& $sum 'SequencePages')"
     "Activities drawn: $(& $sum 'ActivitiesDrawn') of $(& $sum 'ActivitiesTotal') ($(if ((& $sum 'ActivitiesTotal') -gt 0) { [Math]::Round(100.0 * (& $sum 'ActivitiesDrawn') / (& $sum 'ActivitiesTotal'), 1) } else { 0 })%); workflows with every activity drawn: $(& $sum 'FullyDrawn')"
+    "Decisions drawn with their branches: $(& $kinds 'Decisions')"
+    "Activities holding others, not expanded: $(& $kinds 'NotExpanded')"
     "Studio layout used: $(& $sum 'StudioLayout'); automatic layout: $(& $sum 'AutoLayout')"
     "Invoked files missing: $(& $sum 'Missing'); outside the project: $(& $sum 'Outside'); set at run time: $(& $sum 'RunTime')"
     "Unreadable files: $(& $sum 'Unreadable'); not workflows: $(& $sum 'NotWorkflows'); folders skipped: $(& $sum 'SkippedFolders'); warnings: $(& $sum 'Warnings')"

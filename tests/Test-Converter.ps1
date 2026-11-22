@@ -306,13 +306,60 @@ function Get-FrameProblems {
             }
         }
     }
+    # Arrows. Each leaves the bottom middle of its source and enters the top middle of its target.
+    # An arrow with no corners must run straight down. An arrow with corners (a branch) must be made
+    # of horizontal and vertical runs that pass through no other shape in its container. Labels may
+    # not cover a shape or another label in the same container.
+    $labels = @{}
     foreach ($c in $Diagram.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]')) {
-        $s = $shapes[$c.GetAttribute('source')]
-        $t = $shapes[$c.GetAttribute('target')]
+        $sid = $c.GetAttribute('source'); $tid = $c.GetAttribute('target')
+        $s = $shapes[$sid]
+        $t = $shapes[$tid]
+        $parent = $c.GetAttribute('parent')
         $name = '"' + $s.Label + '" to "' + $t.Label + '"'
-        if ($s.Parent -ne $c.GetAttribute('parent') -or $t.Parent -ne $c.GetAttribute('parent')) { $problems.Add("arrow $name leaves its container") }
+        if ($s.Parent -ne $parent -or $t.Parent -ne $parent) { $problems.Add("arrow $name leaves its container") }
         if ($t.Y -lt $s.Y + $s.H) { $problems.Add("arrow $name does not run downwards") }
-        if ([Math]::Abs(($s.X + $s.W / 2) - ($t.X + $t.W / 2)) -gt 0.5) { $problems.Add("arrow $name is not straight") }
+        $poly = @(, @(($s.X + $s.W / 2), ($s.Y + $s.H)))
+        foreach ($p in $c.SelectNodes('mxGeometry/Array/mxPoint')) { $poly += , @([double]::Parse($p.GetAttribute('x'), $inv), [double]::Parse($p.GetAttribute('y'), $inv)) }
+        $poly += , @(($t.X + $t.W / 2), $t.Y)
+        if ($poly.Count -eq 2) {
+            if ([Math]::Abs($poly[0][0] - $poly[1][0]) -gt 0.5) { $problems.Add("arrow $name is not straight") }
+        }
+        $total = 0.0
+        $lengths = @()
+        for ($i = 1; $i -lt $poly.Count; $i++) {
+            $a = $poly[$i - 1]; $b = $poly[$i]
+            if ([Math]::Abs($a[0] - $b[0]) -gt 0.01 -and [Math]::Abs($a[1] - $b[1]) -gt 0.01) { $problems.Add("arrow $name has a slanted run") }
+            $lengths += [Math]::Abs($a[0] - $b[0]) + [Math]::Abs($a[1] - $b[1])
+            $total += $lengths[$lengths.Count - 1]
+            $x1 = [Math]::Min($a[0], $b[0]); $x2 = [Math]::Max($a[0], $b[0]); $y1 = [Math]::Min($a[1], $b[1]); $y2 = [Math]::Max($a[1], $b[1])
+            foreach ($o in $byParent[$parent]) {
+                if ([object]::ReferenceEquals($o, $s) -or [object]::ReferenceEquals($o, $t)) { continue }
+                if ($x2 -gt $o.X + 0.5 -and $x1 -lt $o.X + $o.W - 0.5 -and $y2 -gt $o.Y + 0.5 -and $y1 -lt $o.Y + $o.H - 0.5) { $problems.Add("arrow $name runs through `"$($o.Label)`"") }
+            }
+        }
+        $text = $c.GetAttribute('value')
+        if ([string]::IsNullOrEmpty($text) -or $total -eq 0) { continue }
+        $lx = 0.0
+        $gx = $c.SelectSingleNode('mxGeometry').GetAttribute('x')
+        if ($gx) { $lx = [double]::Parse($gx, $inv) }
+        $dist = ($lx + 1) * $total / 2
+        $i = 0
+        while ($i -lt $lengths.Count - 1 -and $dist -gt $lengths[$i]) { $dist -= $lengths[$i]; $i++ }
+        $f = 0.0
+        if ($lengths[$i] -gt 0) { $f = [Math]::Min(1.0, $dist / $lengths[$i]) }
+        $cx = $poly[$i][0] + ($poly[$i + 1][0] - $poly[$i][0]) * $f
+        $cy = $poly[$i][1] + ($poly[$i + 1][1] - $poly[$i][1]) * $f
+        $w = $text.Length * 6.2 + 4
+        $box = @{ Text = $text; X = $cx - $w / 2; Y = $cy - 7.5; W = $w; H = 15.0 }
+        foreach ($o in $byParent[$parent]) {
+            if ($box.X -lt $o.X + $o.W -and $o.X -lt $box.X + $box.W -and $box.Y -lt $o.Y + $o.H -and $o.Y -lt $box.Y + $box.H) { $problems.Add("label `"$text`" covers `"$($o.Label)`"") }
+        }
+        if (-not $labels.ContainsKey($parent)) { $labels[$parent] = New-Object System.Collections.Generic.List[object] }
+        foreach ($l in $labels[$parent]) {
+            if ($box.X -lt $l.X + $l.W -and $l.X -lt $box.X + $box.W -and $box.Y -lt $l.Y + $l.H -and $l.Y -lt $box.Y + $box.H) { $problems.Add("labels `"$text`" and `"$($l.Text)`" overlap") }
+        }
+        $labels[$parent].Add($box)
     }
     return , $problems
 }
@@ -842,8 +889,8 @@ try {
     Assert ($frameProblems.Count -eq 0) ('sequence page: every shape inside its frame, none overlapping, arrows straight down' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
     Assert ($report -match 'sequences\.xaml - sequence: ') 'a top-level sequence gets a sequence page, not a summary'
-    Assert ($report -match 'Activities drawn: 18 of 31\.') 'report counts the activities drawn (18 of 31)'
-    Assert ($report -match 'sequences\.xaml \(sequence\): 13 activities not drawn') 'report says how many activities are inside boxes not expanded (13)'
+    Assert ($report -match 'Activities drawn: 22 of 31\.') 'report counts the activities drawn (22 of 31)'
+    Assert ($report -match 'sequences\.xaml \(sequence\): 9 activities not drawn') 'report says how many activities are inside boxes not expanded (9)'
     $cells = @{}
     $byId = @{}
     foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) {
@@ -853,18 +900,26 @@ try {
         if ($info.Vertex) { $cells[([string]$info.Label -split "`n")[0]] = $info }
     }
     function Get-InsideOrder($FrameLabel) {
-        # The first label line of each shape directly inside a frame, top to bottom.
+        # The first label line of each shape directly inside a frame, top to bottom. A branch block
+        # (an invisible container) is named after its decision.
         $frameId = $cells[$FrameLabel].Id
         return @($byId.Values | Where-Object { $_.Vertex -and $_.Parent -eq $frameId } |
             Sort-Object { [double]::Parse($_.Inner.SelectSingleNode('mxGeometry').GetAttribute('y'), [System.Globalization.CultureInfo]::InvariantCulture) } |
-            ForEach-Object { ([string]$_.Label -split "`n")[0] })
+            ForEach-Object {
+                $l = ([string]$_.Label -split "`n")[0]
+                if ($_.Style -like 'rounded=0;fillColor=none;strokeColor=none;container=1;*') {
+                    $blockId = $_.Id
+                    $l = @($byId.Values | Where-Object { $_.Parent -eq $blockId -and $_.Style -like 'rhombus;*' } | ForEach-Object { ([string]$_.Label -split "`n")[0] })[0]
+                }
+                $l
+            })
     }
     $order = Get-InsideOrder 'Handle a request'
     $expectedOrder = @('Set the start time', 'Log the start', 'Prepare', 'Is it urgent?', 'Try to send', 'Old step', 'Send to the queue', 'Run as a batch', 'Level 2', 'Delay')
     Assert (($order -join '|') -eq ($expectedOrder -join '|')) "activities are drawn in the order written (found: $($order -join ', '))"
     Assert (((Get-InsideOrder 'Prepare') -join '|') -eq 'Load the settings|Empty part') 'a nested sequence is a frame holding its own activities in order'
     $arrows = @($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]'))
-    Assert ($arrows.Count -eq 10) "one arrow from each activity to the next in each frame (found $($arrows.Count), expected 10)"
+    Assert ($arrows.Count -eq 15) "one arrow from each activity to the next, and four for the If's two branches (found $($arrows.Count), expected 15)"
     Assert ($cells['Load the settings'].Label -match 'Setup\\LoadSettings\.xaml \(missing\)' -and $cells['Load the settings'].Style -match 'dashed=1') 'an invoke step names its workflow and marks it missing'
     Assert ($cells['Empty part'].Label -match '\(empty sequence\)') 'an empty sequence is drawn and says it is empty'
     $rowsOf = {
@@ -872,9 +927,8 @@ try {
         $id = $cells[$Label].Id
         @($byId.Values | Where-Object { $_.Parent -eq $id -and $_.Vertex } | ForEach-Object { [string]$_.Label })
     }
-    $ifRows = & $rowsOf 'Is it urgent?'
-    Assert ($cells['Is it urgent?'].Style -match 'dashed=1' -and $ifRows -contains '[If] 4 activities inside, not drawn in version 1') 'an If is one dashed box saying how many activities it holds'
-    Assert ($ifRows -contains 'Escalate.xaml (missing)') 'a workflow invoked inside an If is listed on its box'
+    Assert ($cells['Is it urgent?'].Style -match '^rhombus') 'an If is drawn as a decision'
+    Assert ((((Get-InsideOrder 'Escalation') -join '|') -eq 'Escalate|Mark as escalated') -and $cells['Escalate'].Label -match 'Escalate\.xaml \(missing\)') 'its Then branch is drawn, with the workflow invoked inside it'
     Assert ((& $rowsOf 'Try to send') -contains '[TryCatch] 2 activities inside, not drawn in version 1') 'a Try Catch is one dashed box, not expanded'
     $oldRows = & $rowsOf 'Old step'
     Assert ($oldRows -contains '3 activities commented out (not run)') 'a Comment Out says its activities do not run'
@@ -882,12 +936,69 @@ try {
     Assert ($cells['Send to the queue'].Label -eq "Send to the queue`n[RouteToQueue]" -and $cells['Send to the queue'].Style -match 'dashed=1') 'an activity from another package is a dashed box showing its type'
     Assert ((& $rowsOf 'Run as a batch') -contains '[BatchScope] from another package: 2 activities inside, not drawn') 'a container from another package is not expanded, and says where it comes from'
     $frames = @($byId.Values | Where-Object { $_.Vertex -and $_.Style -match '^swimlane;rounded=0;startSize=26;' }).Count
-    Assert ($frames -eq 9) "sequences up to the depth limit are frames (found $frames, expected 9: the top level, Prepare and Levels 2 to 8)"
+    Assert ($frames -eq 10) "sequences up to the depth limit are frames (found $frames, expected 10: the top level, Prepare, Escalation and Levels 2 to 8)"
     Assert ((& $rowsOf 'Level 9') -contains 'Nested too deep to draw: 2 activities inside') 'a sequence past the depth limit is collapsed and says how much it holds'
     Assert ($cells.ContainsKey('Delay') -and -not $cells.ContainsKey('Deepest step')) 'an activity with no display name is still drawn; activities inside collapsed boxes are not'
     Assert ($d.Text -notmatch '\[urgent\]') 'leaves the If condition out by default'
     $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'sequences.xaml'); OutputPath = (Join-Path $work 'seq-again') }
     Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a sequence page comes out the same every time'
+
+    # --- Branching inside sequences: If, Else If, Switch -------------------------------------------
+    Write-Host "`nBranching"
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'branches.xaml'); OutputPath = (Join-Path $work 'branches') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $page = $d.Doc.SelectNodes('/mxfile/diagram')[0]
+    $frameProblems = Get-FrameProblems $page
+    Assert ($frameProblems.Count -eq 0) ('branches: every shape inside its container, no arrow through a shape, no label over a shape or label' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
+    $report = [System.IO.File]::ReadAllText($r.ReportFile)
+    Assert ($report -match 'Activities drawn: 37 of 44\.') 'report counts the activities drawn (37 of 44)'
+    Assert ($report -match '16 decisions drawn with their branches \(If x12, IfElseIf x2, Switch x2\)') 'report counts the decisions drawn, by type'
+    Assert ($report -match 'branches\.xaml \(sequence\): 7 activities not drawn') 'report says how many activities are inside boxes not expanded (7)'
+    $info = @{}
+    foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) { $ci = Get-CellInfo $c; $info[$ci.Id] = $ci }
+    function Get-ShapeName($Id) {
+        # How a branch's target reads: the meeting dot, the next decision, or the first line of its label.
+        $t = $info[$Id]
+        if ($t.Style -like 'ellipse;fillColor=#666666;*') { return 'join' }
+        if ($t.Style -like 'rounded=0;fillColor=none;strokeColor=none;container=1;*') {
+            $diamond = @($info.Values | Where-Object { $_.Parent -eq $Id -and $_.Style -like 'rhombus;*' })[0]
+            return 'decision ' + ([string]$diamond.Label -split "`n")[0]
+        }
+        return ([string]$t.Label -split "`n")[0]
+    }
+    function Get-Branches($Decision) {
+        # "label>target" for each branch of a decision, in the order the file gives them.
+        $id = @($info.Values | Where-Object { $_.Style -like 'rhombus;*' -and ([string]$_.Label -split "`n")[0] -eq $Decision })[0].Id
+        return (@($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('source') -eq $id } |
+            ForEach-Object { $_.GetAttribute('value') + '>' + (Get-ShapeName $_.GetAttribute('target')) }) -join ', ')
+    }
+    Assert ((Get-Branches 'Is the order valid?') -eq 'Then>Accept, Else>Reject the order') 'an If has a Then and an Else branch, each drawn'
+    Assert ((Get-Branches 'Is it large?') -eq 'Then>Ask for approval, Else>join') 'an If nested in a branch is drawn; its missing Else goes straight on'
+    Assert (@($info.Values | Where-Object { ([string]$_.Label) -match '^Ask for approval\nApproval\\Ask\.xaml \(missing\)$' }).Count -eq 1) 'an invoke inside a branch names its workflow'
+    Assert ((Get-Branches 'Has a discount?') -eq 'Then>join, Else>Charge full price') 'an If with no Then: its Then branch goes straight on'
+    Assert ((Get-Branches 'Nothing to do?') -eq 'Then>join, Else>join') 'an If with neither branch: both go straight on'
+    Assert ((Get-Branches 'Which region?') -eq 'North>Use the north team, South>South handling, West>join, East>Use the east team, Default>Unknown region') 'a Switch has one branch per case in the order written, then Default; an empty case goes straight on'
+    Assert ((Get-Branches 'How many items?') -eq '1>One item, 2>Two items, Default>join') 'a Switch with no Default: its Default branch goes straight on'
+    Assert ((Get-Branches 'Choose the shipping') -eq 'Then>Ship by air, Else>decision Else If') 'an Else If starts with its first condition; Else leads to the next'
+    $elseIfs = @($info.Values | Where-Object { $_.Style -like 'rhombus;*' -and $_.Label -eq 'Else If' })
+    $chain = @($elseIfs | ForEach-Object {
+            $eid = $_.Id
+            (@($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('source') -eq $eid } | ForEach-Object { $_.GetAttribute('value') + '>' + (Get-ShapeName $_.GetAttribute('target')) }) -join ', ')
+        } | Sort-Object)
+    Assert (($chain -join ' / ') -eq 'Then>join, Else>decision Else If / Then>Ship by sea, Else>Ship by road') "each later condition is its own decision; an empty one goes straight on, and the last Else holds the Else block (found: $($chain -join ' / '))"
+    Assert ((Get-Branches 'Choose a carrier') -eq 'Then>Use carrier A, Else>join') 'an Else If with no Else block: its last Else goes straight on'
+    Assert ((Get-Branches 'Level 7?') -eq 'Then>Level 8?, Else>join') 'decisions are drawn down to the depth limit'
+    Assert ((@($info.Values | Where-Object { [string]$_.Label -eq 'Nested too deep to draw: 3 activities inside' })).Count -eq 1 -and -not ($info.Values | Where-Object { $_.Label -like 'Level 9?*' })) 'past the depth limit an If is one box saying how much it holds'
+    Assert ((Get-Branches 'Retry needed?') -eq 'Then>Try again, Else>No retry') 'a Try Catch in a branch is drawn as a box, not expanded'
+    Assert ($d.Text -notmatch 'order\.IsValid|order\.Region|order\.Weight') 'leaves conditions and switch expressions out by default'
+    $joins = @($info.Values | Where-Object { $_.Style -like 'ellipse;fillColor=#666666;*' }).Count
+    Assert ($joins -eq 18) "every decision's branches meet again at one dot (found $joins, expected 18: one for each decision, including both Else If links)"
+    $rd = Invoke-Converter @{ Path = (Join-Path $fixtures 'branches.xaml'); OutputPath = (Join-Path $work 'branches-details'); IncludeDetails = $true }
+    $dd = Read-Drawio $rd.DrawioFiles[0]
+    Assert ($dd.Text -match 'Is the order valid\?&#xA;\[order\.IsValid\]' -and $dd.Text -match 'Which region\?&#xA;\[order\.Region\]' -and $dd.Text -match 'Else If&#xA;\[order\.IsCoastal\]') '-IncludeDetails adds conditions and switch expressions as text, without evaluating them'
+    Assert ((Get-FrameProblems $dd.Doc.SelectNodes('/mxfile/diagram')[0]).Count -eq 0) '-IncludeDetails: the larger decisions still fit without overlaps'
+    $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'branches.xaml'); OutputPath = (Join-Path $work 'branches-again') }
+    Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with branches comes out the same every time'
 
     # --- Regression baseline: state machine, flowchart and project map pages, byte for byte --------
     Write-Host "`nRegression baseline"

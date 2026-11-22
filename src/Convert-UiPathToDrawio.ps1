@@ -124,6 +124,8 @@ $script:Style = @{
     StepCard       = 'swimlane;rounded=1;startSize=28;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;swimlaneFillColor=#ffffff;collapsible=0;'
     CollapsedCard  = 'swimlane;rounded=1;startSize=28;fontStyle=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;swimlaneFillColor=#ffffff;collapsible=0;'
     SequenceFrame  = 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#eef3f8;strokeColor=#7a96b5;swimlaneFillColor=#fbfcfd;collapsible=0;'
+    BranchBlock    = 'rounded=0;fillColor=none;strokeColor=none;container=1;collapsible=0;'
+    Join           = 'ellipse;fillColor=#666666;strokeColor=#666666;'
     Invoke         = 'shape=process;size=0.04;fillColor=#e1d5e7;strokeColor=#9673a6;'
     InvokeMissing  = 'shape=process;size=0.04;dashed=1;fillColor=#ffffff;strokeColor=#b85450;fontColor=#b85450;'
     InvokeComputed = 'shape=process;size=0.04;dashed=1;fillColor=#ffffff;strokeColor=#999999;fontColor=#666666;'
@@ -158,6 +160,8 @@ $script:RoleStyle = @{
     'otherActivity'   = $script:Style.Unknown
     'collapsed|Card'  = $script:Style.CollapsedCard
     'sequence|Frame'  = $script:Style.SequenceFrame
+    'branchBlock'     = $script:Style.BranchBlock
+    'join'            = $script:Style.Join
     'decision'        = $script:Style.Decision
     'switch'          = $script:Style.Switch
     'workflow'        = $script:Style.Workflow
@@ -1097,15 +1101,22 @@ function Get-FlowchartGraph {
 # ---------------------------------------------------------------------------
 # A sequence runs its activities one after another, in the order written. The page draws it as a frame
 # with its activities stacked top to bottom and joined by arrows. A sequence inside it is a frame of
-# its own. Version 1 expands nothing else: any other activity that holds activities (If, Try Catch,
-# loops, scopes, and containers from other packages) is drawn as one dashed box saying what it is and
-# how many activities it holds, and listing the workflows invoked inside it. Nothing is guessed about
-# what such an activity does with its contents.
+# its own. An If, an Else If (UiPath's IfElseIf) or a Switch is a decision with its branches side by
+# side below it, each labelled (Then and Else, or the case values and Default), meeting again at a dot.
+# A branch with nothing in it is an arrow straight to the dot: when it is taken, nothing happens.
+# Nothing else is expanded: any other activity that holds activities (Try Catch, loops, scopes, and
+# containers from other packages) is drawn as one dashed box saying what it is and how many activities
+# it holds, and listing the workflows invoked inside it. Conditions are never evaluated; they are shown
+# as text only with -IncludeDetails.
 
 $script:MaxSequenceDepth = 8     # sequences nested deeper than this are collapsed, not drawn
 $script:FrameHeader = 26
 $script:SequencePad = 20
 $script:SequenceGap = 30
+$script:BranchBus = 20       # from a decision down to the line its branches leave from
+$script:BranchDrop = 34      # from that line down to the top of each branch, with room for the label
+$script:BranchGap = 30       # between branches side by side
+$script:JoinSize = 14        # the dot where the branches meet again
 
 function Get-ActivityChildren {
     # Every child element that is an activity: not a property element (Name.Property), not markup.
@@ -1127,19 +1138,54 @@ function Get-InsideCount {
     return $count
 }
 
+function New-SequenceItem {
+    # The record for one thing on a sequence page.
+    param($Element, [string]$Type, [string]$Source, [string]$Label, [bool]$Counts)
+    return @{
+        Element = $Element; Type = $Type; Source = $Source; Label = $Label
+        Shape = 'Box'; Role = 'step'; Link = $null; Children = $null; Rows = $null
+        Inside = 0; Reason = ''; Counts = $Counts
+        Diamond = $null; Branches = $null; Join = $null; BusY = 0.0; JoinBusY = 0.0
+        X = 0.0; Y = 0.0; W = 0.0; H = 0.0
+    }
+}
+
+function Get-BranchActivity {
+    # The activity held by a branch property (If.Then, IfElseIfBlock.Then, Switch.Default), or $null.
+    param($Element, [string]$PropertyName)
+    foreach ($p in (Get-ChildElement $Element $PropertyName)) {
+        foreach ($c in (Get-ActivityChildren $p)) { return $c }
+    }
+    return $null
+}
+
+function Set-BranchBlock {
+    # Turns an item into a decision with branches. Each branch is @{ Label; Element } (an activity to
+    # draw, or $null for an empty branch) or @{ Label; Item } (an item already built: the next decision
+    # of an Else If chain).
+    param($Item, [string]$DiamondLabel, [string]$Role, [string]$Kind, $Branches, [int]$Depth, $Context, $InvokeByElement)
+    $Item.Shape = 'Block'
+    $Item.Role = 'branchBlock'
+    $Item.Diamond = @{ Label = $DiamondLabel; Role = $Role; Kind = $Kind; X = 0.0; Y = 0.0; W = 0.0; H = 0.0 }
+    $Item.Branches = New-Object System.Collections.Generic.List[object]
+    foreach ($b in $Branches) {
+        $sub = $null
+        if ($b.ContainsKey('Item')) { $sub = $b.Item }
+        elseif ($null -ne $b.Element) { $sub = Get-SequenceItem $b.Element ($Depth + 1) $Context $InvokeByElement }
+        $Item.Branches.Add(@{ Label = $b.Label; Item = $sub; ColW = 0.0; ColX = 0.0 })
+    }
+    return $Item
+}
+
 function Get-SequenceItem {
     # What the sequence page draws for one activity: a frame (a sequence, with its activities), a box
     # (one activity, or an invoked workflow), or a dashed card (an activity holding others, not expanded).
     param($Element, [int]$Depth, $Context, $InvokeByElement)
     $type = $Element.get_LocalName()
     $source = Get-ActivitySource $Element.get_NamespaceURI()
-    $item = @{
-        Element = $Element; Type = $type; Source = $source; Label = (Get-StepLabel $Element)
-        Shape = 'Box'; Role = 'step'; Link = $null; Children = $null; Rows = $null
-        Inside = 0; Reason = ''; Counts = (Test-CountsAsActivity $Element)
-        X = 0.0; Y = 0.0; W = 0.0; H = 0.0
-    }
+    $item = New-SequenceItem $Element $type $source (Get-StepLabel $Element) (Test-CountsAsActivity $Element)
     $isSequence = ($type -eq 'Sequence' -and $source -eq 'WorkflowFoundation')
+    $isBranching = (($source -eq 'WorkflowFoundation' -and ($type -eq 'If' -or $type -eq 'Switch')) -or ($source -eq 'UiPath' -and $type -eq 'IfElseIf'))
     if ($isSequence -and $Depth -le $script:MaxSequenceDepth) {
         $children = Get-ActivityChildren $Element
         if ($children.Count -eq 0) {
@@ -1162,6 +1208,79 @@ function Get-SequenceItem {
             return $item
         }
     }
+    if ($isBranching -and $Depth -le $script:MaxSequenceDepth) {
+        $label = $item.Label
+        if ($type -eq 'If') {
+            if ($Context.IncludeDetails) {
+                $cond = Get-PropertyText $Element 'Condition' 'If.Condition'
+                if ($cond) { $label = $label + "`n" + $cond }
+            }
+            $branches = @(
+                @{ Label = 'Then'; Element = (Get-BranchActivity $Element 'If.Then') },
+                @{ Label = 'Else'; Element = (Get-BranchActivity $Element 'If.Else') }
+            )
+            return (Set-BranchBlock $item $label 'decision' 'Decision' $branches $Depth $Context $InvokeByElement)
+        }
+        if ($type -eq 'Switch') {
+            if ($Context.IncludeDetails) {
+                $expr = Get-PropertyText $Element 'Expression' 'Switch.Expression'
+                if ($expr) { $label = $label + "`n" + $expr }
+            }
+            # Cases are children with an x:Key, in the order written; the default comes last.
+            $branches = New-Object System.Collections.Generic.List[object]
+            foreach ($c in (Get-ChildElement $Element)) {
+                if ($c.get_LocalName().Contains('.')) { continue }
+                $key = Get-XamlKey $c
+                if ($null -eq $key) { $key = '(no key)' }
+                if ($c.get_NamespaceURI() -eq $script:XamlNs) {
+                    if ($c.get_LocalName() -eq 'Null') { $branches.Add(@{ Label = $key; Element = $null }) }
+                    continue
+                }
+                if ($script:NonActivityNs -contains $c.get_NamespaceURI()) { continue }
+                $branches.Add(@{ Label = $key; Element = $c })
+            }
+            $branches.Add(@{ Label = 'Default'; Element = (Get-BranchActivity $Element 'Switch.Default') })
+            return (Set-BranchBlock $item $label 'switch' 'Switch' $branches $Depth $Context $InvokeByElement)
+        }
+        # Else If: its blocks are tried in order and the first whose condition holds runs; the Else
+        # block runs if none does. Drawn as a chain: each decision's Else leads to the next decision.
+        $conditions = New-Object System.Collections.Generic.List[object]
+        $elseBlock = $null
+        foreach ($holder in (Get-ChildElement $Element 'IfElseIf.ConditionBlocks')) {
+            # The blocks sit in a list element (List or BindingList), or directly in the property.
+            foreach ($c in (Get-ChildElement $holder)) {
+                $blocks = New-Object System.Collections.Generic.List[object]
+                if ($c.get_LocalName() -eq 'IfElseIfBlock') { $blocks.Add($c) }
+                else { foreach ($x in (Get-ChildElement $c 'IfElseIfBlock')) { $blocks.Add($x) } }
+                foreach ($b in $blocks) {
+                    if ((Get-Attr $b 'BlockType') -eq 'Else') { $elseBlock = $b } else { $conditions.Add($b) }
+                }
+            }
+        }
+        if ($conditions.Count -gt 0) {
+            $next = $null
+            for ($i = $conditions.Count - 1; $i -ge 0; $i--) {
+                $b = $conditions[$i]
+                $linkLabel = 'Else If'
+                if ($i -eq 0) { $linkLabel = $label }
+                if ($Context.IncludeDetails) {
+                    $cond = Get-PropertyText $b 'Condition' 'IfElseIfBlock.Condition'
+                    if ($cond) { $linkLabel = $linkLabel + "`n" + $cond }
+                }
+                $link = $item
+                if ($i -gt 0) { $link = New-SequenceItem $b 'IfElseIf' $source 'Else If' $false }
+                $elseBranch = @{ Label = 'Else'; Item = $next }
+                if ($null -eq $next) {
+                    $elseActivity = $null
+                    if ($null -ne $elseBlock) { $elseActivity = Get-BranchActivity $elseBlock 'IfElseIfBlock.Then' }
+                    $elseBranch = @{ Label = 'Else'; Element = $elseActivity }
+                }
+                $thenBranch = @{ Label = 'Then'; Element = (Get-BranchActivity $b 'IfElseIfBlock.Then') }
+                $next = Set-BranchBlock $link $linkLabel 'decision' 'Decision' @($thenBranch, $elseBranch) $Depth $Context $InvokeByElement
+            }
+            return $next
+        }
+    }
     $inside = Get-InsideCount $Element
     if ($inside -gt 0 -or $isSequence) {
         $item.Shape = 'Card'
@@ -1169,7 +1288,7 @@ function Get-SequenceItem {
         $item.Inside = $inside
         $activities = Format-Count $inside 'activity' 'activities'
         $suffix = ''
-        if ($isSequence) {
+        if ($isSequence -or ($isBranching -and $Depth -gt $script:MaxSequenceDepth)) {
             $item.Reason = 'depth'
             $text = 'Nested too deep to draw: ' + $activities + ' inside'
         }
@@ -1208,6 +1327,45 @@ function Get-SequenceItem {
 function Set-SequenceLayout {
     # Sizes every item and places each frame's items centred, top to bottom, relative to the frame.
     param($Item)
+    if ($Item.Shape -eq 'Block') {
+        # The decision on top, centred; its branches side by side below it; the dot under them all.
+        # The block is symmetric about its centre, so the arrows of the sequence around it stay straight.
+        $d = Measure-Node @{ Kind = $Item.Diamond.Kind; Label = $Item.Diamond.Label; Rows = @() } $false
+        $Item.Diamond.W = $d.W
+        $Item.Diamond.H = $d.H
+        $total = 0.0
+        $tallest = 0.0
+        foreach ($b in $Item.Branches) {
+            $w = [Math]::Max(60.0, (Get-TextSize $b.Label 6.6 14).W + 16)    # 60.0, not 60: an int first argument makes PowerShell pick Max(int, int)
+            if ($null -ne $b.Item) {
+                Set-SequenceLayout $b.Item
+                $w = [Math]::Max($w, $b.Item.W)
+                if ($b.Item.H -gt $tallest) { $tallest = $b.Item.H }
+            }
+            $b.ColW = $w
+            $total += $w
+        }
+        $total += $script:BranchGap * ($Item.Branches.Count - 1)
+        $Item.W = [Math]::Max($total, $d.W)
+        $cx = $Item.W / 2
+        $Item.Diamond.X = $cx - $d.W / 2
+        $Item.Diamond.Y = 0.0
+        $Item.BusY = $d.H + $script:BranchBus
+        $top = $Item.BusY + $script:BranchDrop
+        $x = $cx - $total / 2
+        foreach ($b in $Item.Branches) {
+            $b.ColX = $x + $b.ColW / 2
+            if ($null -ne $b.Item) {
+                $b.Item.X = $b.ColX - $b.Item.W / 2
+                $b.Item.Y = $top
+            }
+            $x += $b.ColW + $script:BranchGap
+        }
+        $Item.JoinBusY = $top + $tallest + $script:BranchBus
+        $Item.Join = @{ X = $cx - $script:JoinSize / 2; Y = $Item.JoinBusY + 16; W = [double]$script:JoinSize; H = [double]$script:JoinSize }
+        $Item.H = $Item.Join.Y + $script:JoinSize
+        return
+    }
     if ($Item.Shape -ne 'Frame') {
         $rows = @()
         if ($null -ne $Item.Rows) { $rows = $Item.Rows }
@@ -1240,6 +1398,43 @@ function Add-SequenceItem {
     # Writes an item, and for a frame everything inside it, as cells nested in their containers, so
     # moving a frame in draw.io moves its contents. Arrows join each activity to the next.
     param($Page, $Item, [string]$ParentId)
+    $style = $script:Style.Edge + 'edgeStyle=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;'
+    if ($Item.Shape -eq 'Block') {
+        # An invisible container, so the decision, its branches and the dot move together in draw.io.
+        $id = Add-Vertex $Page '' (Get-NodeStyle @{ Role = 'branchBlock'; Kind = 'Block'; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId
+        $dm = $Item.Diamond
+        $diamondId = Add-Vertex $Page $dm.Label (Get-NodeStyle @{ Role = $dm.Role; Kind = $dm.Kind; LabelSide = $null }) $dm.X $dm.Y $dm.W $dm.H $id
+        $branchIds = New-Object System.Collections.Generic.List[string]
+        foreach ($b in $Item.Branches) {
+            if ($null -ne $b.Item) { $branchIds.Add((Add-SequenceItem $Page $b.Item $id)) } else { $branchIds.Add('') }
+        }
+        $j = $Item.Join
+        $joinId = Add-Vertex $Page '' (Get-NodeStyle @{ Role = 'join'; Kind = 'Join'; LabelSide = $null }) $j.X $j.Y $j.W $j.H $id
+        $cx = $Item.W / 2
+        $fromY = $dm.Y + $dm.H
+        for ($i = 0; $i -lt $Item.Branches.Count; $i++) {
+            $b = $Item.Branches[$i]
+            $straight = ([Math]::Abs($b.ColX - $cx) -lt 0.01)
+            # The label sits on the drop from the line under the decision into the branch.
+            $labelAt = ($Item.BusY - $fromY) + [Math]::Abs($b.ColX - $cx) + $script:BranchDrop / 2
+            $down = New-Object System.Collections.Generic.List[object]
+            if (-not $straight) { $down.Add(@($cx, $Item.BusY)); $down.Add(@($b.ColX, $Item.BusY)) }
+            if ($null -ne $b.Item) {
+                $length = ($b.Item.Y - $fromY) + [Math]::Abs($b.ColX - $cx)
+                [void](Add-EdgeCell $Page $b.Label $style $diamondId $branchIds[$i] $down (2 * $labelAt / $length - 1) 0 $id)
+                $back = New-Object System.Collections.Generic.List[object]
+                if (-not $straight) { $back.Add(@($b.ColX, $Item.JoinBusY)); $back.Add(@($cx, $Item.JoinBusY)) }
+                [void](Add-EdgeCell $Page '' $style $branchIds[$i] $joinId $back $null 0 $id)
+            }
+            else {
+                # Nothing in this branch: straight on to the dot.
+                if (-not $straight) { $down.Add(@($b.ColX, $Item.JoinBusY)); $down.Add(@($cx, $Item.JoinBusY)) }
+                $length = ($j.Y - $fromY) + 2 * [Math]::Abs($b.ColX - $cx)
+                [void](Add-EdgeCell $Page $b.Label $style $diamondId $joinId $down (2 * $labelAt / $length - 1) 0 $id)
+            }
+        }
+        return $id
+    }
     $id = Add-Vertex $Page $Item.Label (Get-NodeStyle @{ Role = $Item.Role; Kind = $Item.Shape; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId $Item.Link
     if ($Item.Shape -eq 'Card') {
         $y = $script:CardHeader + $script:RowGap
@@ -1251,7 +1446,6 @@ function Add-SequenceItem {
     if ($Item.Shape -eq 'Frame') {
         $ids = New-Object System.Collections.Generic.List[string]
         foreach ($c in $Item.Children) { $ids.Add((Add-SequenceItem $Page $c $id)) }
-        $style = $script:Style.Edge + 'edgeStyle=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;'
         for ($i = 1; $i -lt $ids.Count; $i++) { [void](Add-EdgeCell $Page '' $style $ids[$i - 1] $ids[$i] $null $null 0 $id) }
     }
     return $id
@@ -1260,20 +1454,27 @@ function Add-SequenceItem {
 function Get-SequenceStats {
     # Counts for the report, over every item below the top-level sequence.
     param($Item, $Stats)
-    foreach ($c in $Item.Children) {
-        if ($c.Counts) { $Stats.Drawn++ }
-        switch ($c.Shape) {
-            'Frame' { $Stats.Sequences++; Get-SequenceStats $c $Stats }
-            'Card' {
-                $Stats.Collapsed++
-                $Stats.Inside += $c.Inside
-                $label = $c.Type
-                if ($c.Reason -eq 'commented out') { $label = 'commented out' }
-                if ($c.Reason -eq 'depth') { $label = 'nested too deep' }
-                $Stats.Kinds[$label] = 1 + [int]$Stats.Kinds[$label]
-            }
-            default { $Stats.Boxes++ }
+    foreach ($c in $Item.Children) { Add-SequenceItemStats $c $Stats }
+}
+
+function Add-SequenceItemStats {
+    param($c, $Stats)
+    if ($c.Counts) { $Stats.Drawn++ }
+    switch ($c.Shape) {
+        'Frame' { $Stats.Sequences++; Get-SequenceStats $c $Stats }
+        'Block' {
+            if ($c.Counts) { $Stats.Branching++; $Stats.BranchKinds[$c.Type] = 1 + [int]$Stats.BranchKinds[$c.Type] }
+            foreach ($b in $c.Branches) { if ($null -ne $b.Item) { Add-SequenceItemStats $b.Item $Stats } }
         }
+        'Card' {
+            $Stats.Collapsed++
+            $Stats.Inside += $c.Inside
+            $label = $c.Type
+            if ($c.Reason -eq 'commented out') { $label = 'commented out' }
+            if ($c.Reason -eq 'depth') { $label = 'nested too deep' }
+            $Stats.Kinds[$label] = 1 + [int]$Stats.Kinds[$label]
+        }
+        default { $Stats.Boxes++ }
     }
 }
 
@@ -2154,11 +2355,17 @@ function New-WorkflowPage {
         $root.X = $left
         $root.Y = $top
         [void](Add-SequenceItem $page $root '1')
-        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{} }
+        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{}; Branching = 0; BranchKinds = @{} }
         if ($root.Shape -eq 'Frame') { Get-SequenceStats $root $stats }
         $Workflow.NotDrawn = [Math]::Max(0, $Workflow.ActivityCount - $stats.Drawn)
-        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences) 'step' 'steps') + ' drawn top to bottom'
+        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences + $stats.Branching) 'step' 'steps') + ' drawn top to bottom'
         if ($stats.Sequences -gt 0) { $text += ', including ' + (Format-Count $stats.Sequences 'nested sequence' 'nested sequences') }
+        if ($stats.Branching -gt 0) {
+            $kinds = @($stats.BranchKinds.Keys | Sort-Object | ForEach-Object { if ($stats.BranchKinds[$_] -gt 1) { $_ + ' x' + $stats.BranchKinds[$_] } else { $_ } })
+            $with = ' drawn with their branches ('
+            if ($stats.Branching -eq 1) { $with = ' drawn with its branches (' }
+            $text += '; ' + (Format-Count $stats.Branching 'decision' 'decisions') + $with + ($kinds -join ', ') + ')'
+        }
         if ($stats.Collapsed -gt 0) {
             $kinds = @($stats.Kinds.Keys | Sort-Object | ForEach-Object { if ($stats.Kinds[$_] -gt 1) { $_ + ' x' + $stats.Kinds[$_] } else { $_ } })
             $text += '; ' + (Format-Count $stats.Collapsed 'activity' 'activities') + ' holding others not expanded (' + ($kinds -join ', ') + ')'
