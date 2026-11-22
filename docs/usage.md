@@ -52,6 +52,20 @@ Summary pages are intentional, not evidence that the workflow has no business lo
 - Switches are diamonds with case names and a default branch. The default label comes from Studio when available, otherwise it is Default.
 - A connection that points to a step that does not exist is not drawn and produces a report warning.
 
+### Sequences
+
+A workflow whose top-level activity is a Sequence gets a sequence page. Sequence pages are new on the main branch and are not in the 0.1.0 release.
+
+- The sequence is a frame with its name at the top. Its activities are stacked inside it, top to bottom, in the order written, joined by arrows.
+- A sequence inside it is a frame of its own, up to 8 levels deep. Frames are draw.io containers: moving one moves its contents. A deeper sequence is collapsed into one box saying how many activities it holds.
+- An Invoke Workflow File step names the invoked file and links to its page, or is marked missing, outside the project or set at run time.
+- A single activity is a box named by its display name, or by its type when it has none. An activity from another library or package is a dashed box showing its type.
+- **An activity that holds other activities is not expanded.** If, Try/Catch, loops, Retry Scope, application and browser scopes, and containers from other packages are each drawn as one dashed box. The box names the activity type, says how many activities it holds, and lists the workflows invoked inside it. Nothing is drawn or guessed about what it does with its contents.
+- A Comment Out box says its activities are commented out and do not run; workflows invoked inside it are listed as commented out.
+- Conditions and expressions are never shown on sequence pages.
+
+The report's line for each workflow ends with "Activities drawn: N of M", counting the activities below the top-level one. On a sequence page, the activities not drawn are exactly those inside the dashed boxes.
+
 ### Layout
 
 The converter reads both inline ViewState and the separate ViewStateManager layout format. When every node has a usable saved position, those relative positions and Studio's arrow routes are retained. The layout may be stretched horizontally and vertically to fit longer labels.
@@ -59,6 +73,8 @@ The converter reads both inline ViewState and the separate ViewStateManager layo
 Arrow labels normally sit halfway along their arrows. Where Studio's routes run close together, a label that would land on another label, a box or a decision's text is moved along its own arrow to the nearest clear place. Boxes and routes are never moved for this. A long label on a short arrow can still touch a nearby box when no clear place exists.
 
 If any node's position is missing or damaged, the whole diagram uses an automatic top-to-bottom layout instead. Arrows are routed around boxes, with separate routes for parallel connections. The report states which layout was used.
+
+Sequence pages ignore saved positions, since Studio arranges a sequence's activities in order itself. Each frame's activities are centred and stacked top to bottom, so every arrow runs straight down.
 
 ## Workflow links
 
@@ -111,7 +127,7 @@ The converter writes each file to a temporary file in the output folder before c
 | Invoked files outside the project folder | Targets deliberately not looked up; their existence is unknown. |
 | File names set at run time, so not linked | Targets that cannot be resolved without evaluating an expression. |
 | Activities by source | Activity counts grouped by where each type comes from: UiPath packages, Workflow Foundation (part of .NET), and other libraries or packages. Types from other libraries are listed one by one with their package, count and the files that use them (the first five, then a count of the rest). Grouping by source does not mean the converter understands what an activity does. |
-| Not drawn in version 1 | Summary-only workflows and activities inside states that were not expanded, with how many activities each leaves out. |
+| Not drawn in version 1 | Summary-only workflows, activities inside states, and activities inside boxes not expanded on sequence pages, with how many activities each leaves out. |
 | Warnings | Unresolved diagram connections, missing start nodes and nested diagrams that were not expanded. |
 | Files that could not be read | Read failures, such as malformed XML or access denied. |
 | Files that are not workflows | Files with a `.xaml` extension that contain other kinds of XML. |
@@ -130,6 +146,8 @@ The report avoids absolute input and output paths in its header, but retains fil
 | White box | A flowchart step. |
 | Purple box | A step that invokes a workflow. |
 | Grey box with a header | A container or summary page listing invoked workflows. |
+| Blue-grey frame with a header | A sequence, holding its activities top to bottom. |
+| Dashed grey box with a header | An activity holding others that is not expanded (such as If or Try/Catch), or a Comment Out. The first line says what it is and how many activities it holds. |
 | Dashed grey box showing a type in brackets | A flowchart step whose activity comes from another library or package (not UiPath or Workflow Foundation). |
 | Yellow diamond | A flow decision. |
 | Orange diamond | A flow switch. |

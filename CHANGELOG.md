@@ -2,6 +2,18 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Sequence pages.** A workflow whose top-level activity is a Sequence is drawn step by step instead of getting a summary page: its activities top to bottom in the order written, nested sequences as frames, invoke steps linked to their workflows. An activity that holds others (If, Try/Catch, loops, scopes, containers from other packages) is one dashed box saying how many activities it holds and listing the workflows invoked inside it; its contents are not expanded yet. Comment Out boxes say their activities do not run.
+- The report ends each workflow's line with "Activities drawn: N of M".
+
+### Changed
+
+- Internally, the graph builders say what each shape is (a state, a step, an invoke and so on) and one function decides how it is drawn. Output is unchanged.
+- The tests compare every state machine, flowchart and project map page made from the samples and fixtures with a stored baseline, byte for byte. The compatibility run can compare every page with an earlier run.
+
 ## 0.1.0 (22 November 2026)
 
 The first release. It converts UiPath workflow files (`.xaml`) into editable draw.io diagrams, on Windows, with nothing to install beyond PowerShell.

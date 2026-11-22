@@ -127,6 +127,43 @@ Measured on the 11 widest maps (sums over all 11; "outside" counts arrows with a
 
 D is deterministic: it uses only the input's order and fixed rules, so PowerShell 5.1 and 7 give byte-identical files. It applies to the project map only. Flowchart and state-machine pages are laid out as before.
 
+## Sequence pages (S0 and S1)
+
+After release 0.1.0, milestones S0 and S1 of the [sequence plan](architecture-exploration.md#8-plan-detailed-uipath-sequence-support) were built and run against the same 93 projects. They are on the main branch, not in a release.
+
+**S0 (no visible change):** the graph builders now say what each shape is, and one function decides how it is drawn. All 750 pages of the corpus (657 workflow pages and 93 project maps) were byte-identical to 0.1.0.
+
+**S1 (sequence pages):** all 93 projects converted in both PowerShell versions, with identical output. Compared with 0.1.0, page by page:
+
+| Pages | Count | Change |
+| --- | --- | --- |
+| Sequence pages | 578 | Changed, as intended: a step diagram instead of a summary |
+| State machine, flowchart and project map pages, and the other summary pages | 172 | Byte-identical |
+
+The diagram checks found no problems once one check was corrected. The first run flagged all 578 sequence pages because the new frame check counted the page's own title and "Back to project map" link, which every page has had since 0.1.0, as overlapping shapes. The check now skips the page header, as the arrow check always has, and a test covers it.
+
+**Checked against the files:** for every one of the 578 sequence pages, the drawn frames were compared with the workflow file: each frame must hold exactly the file's activities, in the written order, with nested sequences matching. All 578 matched. As a control, the same comparison on the 0.1.0 output (summary pages) reported 563 mismatches; the other 15 are empty sequences. The largest and a median sequence page were also rendered with the draw.io desktop app and inspected.
+
+### Coverage
+
+| Measure | 0.1.0 | S1 |
+| --- | --- | --- |
+| Workflows with a step-by-step page (state machine, flowchart or sequence) | 64 of 657 | 642 of 657 |
+| Workflows with a summary page only | 593 | 15 (10 Try/Catch, 4 other top-level activities, 1 empty) |
+| Activities drawn as their own shape | 299 of 13,191 (2.3%) | 2,429 of 13,191 (18.4%) |
+| Workflows with every activity drawn | 13 | 169 |
+
+"Activities" counts every activity below each workflow's top-level one. On a state-machine page none of them is drawn (states and transitions are not activities); on a flowchart page, each step's own activity is.
+
+| Workflow kind | Workflows | Activities drawn | Every activity drawn |
+| --- | --- | --- | --- |
+| Sequence | 578 | 2,130 of 10,663 (20%) | 156 |
+| Flowchart | 44 | 299 of 1,239 (24%) | 13 |
+| State machine | 20 | 0 of 1,103 | 0 |
+| Summary pages | 15 | 0 of 186 | 0 |
+
+**Most of a sequence's logic is still inside boxes that are not expanded.** 703 activities on sequence pages hold others and are drawn as one dashed box each; together they hold 80% of the activities in sequence workflows. The commonest: If (247), Try/Catch (113), For Each (62), Browser Scope (55), Use Application/Browser (38), For Each Row (32), Comment Out (29), Excel Application Scope (28), Open Browser (18), Retry Scope (17). S2 (If, Else If, Switch) and S3 (Try/Catch and loops) address the largest groups; scopes are not yet in the plan.
+
 ## Supported project types, as tested
 
 | Project type | Converts | Detailed diagrams |

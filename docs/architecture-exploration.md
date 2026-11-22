@@ -161,6 +161,8 @@ No collapsed box is ever silent. Every one adds a counted line to the report's "
 
 ### 8.3 Milestones
 
+**Status:** S0 and S1 are done (after release 0.1.0; results in the [compatibility report](compatibility-report.md#sequence-pages-s0-and-s1)). Differences from the plan below: the depth limit is fixed at 8 rather than a `-MaxDepth` parameter, because the deepest nesting of sequences in the corpus is 4; there is no size limit, because the longest sequence in the corpus has 24 activities; and the flowchart and state-machine protection uses page hashes of the samples and fixtures in the tests, plus every corpus page in the compatibility run.
+
 | Milestone | Scope | Acceptance criteria |
 | --- | --- | --- |
 | **S0. Preparation** | Step 1 of section 7 (presentation separated from semantics). Record the corpus results, including every `.drawio` file's hash, as a baseline. Add the coverage measures of 8.5 to the compatibility script, computed from the reports. | All tests pass in both PowerShell versions. Corpus output byte-identical to the baseline. Coverage measures reproduce today's figures (64 of 657 workflows in detail). |

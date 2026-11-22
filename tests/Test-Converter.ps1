@@ -276,6 +276,7 @@ function Get-FrameProblems {
     foreach ($c in $Diagram.SelectNodes('mxGraphModel/root/*')) {
         $info = Get-CellInfo $c
         if (-not $info.Vertex) { continue }
+        if ($info.Parent -eq '1' -and $info.Style -like 'text;*') { continue }    # the page's title and links
         $g = $info.Inner.SelectSingleNode('mxGeometry')
         $shapes[$info.Id] = @{
             Parent = $info.Parent; Label = ([string]$info.Label -split "`n")[0]; Style = $info.Style
@@ -551,6 +552,15 @@ try {
     Assert-CleanArrows $r.DrawioFiles[0] 'state machine with five parallel transitions and two self-transitions'
     $r = Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = (Join-Path $work 'arrows-proj') }
     Assert-CleanArrows $r.DrawioFiles[0] 'project sample (map and the automatically laid out Main page)' @('Project map', 'Main.xaml')
+    # Sequence pages in a project have the "Back to project map" link in their header as well.
+    $seqProblems = @()
+    $seqPages = 0
+    foreach ($dg in (Read-Drawio $r.DrawioFiles[0]).Doc.SelectNodes('/mxfile/diagram')) {
+        if ($dg.OuterXml -notmatch '\(sequence\)" style="text;fontSize=16;') { continue }
+        $seqPages++
+        foreach ($p in (Get-FrameProblems $dg)) { $seqProblems += ($dg.GetAttribute('name') + ': ' + $p) }
+    }
+    Assert ($seqPages -eq 4 -and $seqProblems.Count -eq 0) ("project sample: $seqPages sequence pages, every shape inside its frame, arrows straight down" + $(if ($seqProblems.Count) { ' -- ' + ($seqProblems -join '; ') } else { '' }))
 
     # A made-up large project, written here: Main invokes 14 steps; three steps invoke shared
     # workflows; a chain runs three levels deep and Main also invokes its last level directly; three
