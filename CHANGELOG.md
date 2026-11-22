@@ -11,7 +11,7 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 - The report ends each workflow's line with "Activities drawn: N of M", and counts the decisions drawn and the activities not expanded, by type.
 - **Try/Catch on sequence pages.** A frame holding the Try, each Catch named after its exception type, and Finally, in the order written. No arrows join the regions; the headers state only the documented conditions.
 - **Loops on sequence pages.** For Each, For Each Row, While, Do While and Retry Scope are frames holding their body, with no loop-back arrows; the header says when the body runs, as documented. Retry counts are not shown.
-- **Where a path ends.** Break, Continue, Throw, Rethrow and Terminate Workflow say what they do and have no outgoing arrow.
+- **Where a path ends.** Break, Continue, Return, Throw, Rethrow and Terminate Workflow say what they do and have no outgoing arrow. A decision whose every branch ends the path has no meeting dot, and nothing after it is drawn as reachable. A Do While whose body always ends the workflow does the same. A Try Catch, or a loop that may run zero times, keeps the arrow after it, because the path may continue.
 - A [migration-semantics requirements ledger](docs/migration-requirements-ledger.md): documentation only.
 
 ### Changed

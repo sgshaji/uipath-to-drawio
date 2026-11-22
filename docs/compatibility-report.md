@@ -163,7 +163,7 @@ Documented in the 0.1.0 README and confirmed by the corpus:
 
 ## Part 2: Unreleased work on the main branch
 
-After release 0.1.0, milestones S0 to S3 of the [sequence plan](architecture-exploration.md#8-plan-detailed-uipath-sequence-support) were built, S3 in two parts (S3a Try/Catch, S3b loops), and each was run against the same 93 projects. Every run converted all 93 projects in both PowerShell versions with identical output, and found no diagram check problems. S0, S1 and S2 are on the main branch; S3a and S3b are committed locally for review. Nothing in Part 2 is in a release.
+After release 0.1.0, milestones S0 to S3 of the [sequence plan](architecture-exploration.md#8-plan-detailed-uipath-sequence-support) were built, S3 in two parts (S3a Try/Catch, S3b loops), followed by a fix for UiPath's Return activity. Each was run against the same 93 projects. Every run converted all 93 projects in both PowerShell versions with identical output, and found no diagram check problems.
 
 ### What each milestone changed
 
@@ -176,6 +176,7 @@ Each run was compared page by page, byte for byte, with the run before it. The p
 | **S2** | If, Else If and Switch drawn as decisions with their labelled branches. | 161 | Yes: the pages with a decision |
 | **S3a** | Try Catch drawn as a frame with Try, Catch and Finally regions. | 95 | Yes: the pages with a Try Catch |
 | **S3b** | For Each, For Each Row, While, Do While and Retry Scope drawn as frames holding their body; Break, Continue, Throw, Rethrow and Terminate Workflow end the path. | 168 | Yes: the pages with a loop or an activity that ends the path (see below) |
+| **Return fix** | UiPath's Return ends the path too. A decision whose every branch ends the path has no meeting dot; a Do While whose body always leaves the whole flow ends the path. | 4 | Yes: the pages with a Return (the other two rules change no corpus page; the tests cover them) |
 
 In every run, all other pages, including every state machine, flowchart and project map page, were byte-identical to the run before.
 
@@ -217,7 +218,7 @@ For S3b, a first comparison expected 163 pages, 5 fewer than changed. The differ
 | While (both forms) | 32 | 14 | Body runs while the Condition is true; checked before each run |
 | Do While (both forms) | 16 | 8 | Body runs once, then while the Condition is true; checked after each run |
 | Retry Scope | 46 | 26 | Action, run again on an error or an unmet Condition; the Condition activity |
-| Break, Continue, Throw, Rethrow, Terminate Workflow | 207 | 114 | Labelled with what they do; no arrow leaves them |
+| Break, Continue, Return, Throw, Rethrow, Terminate Workflow | 214 | 121 | Labelled with what they do; no arrow leaves them |
 
 The rest are not drawn because they sit somewhere the converter does not expand: inside a scope, a nested flowchart or state machine, a flowchart step or a state, one of the 15 summary pages, or past the depth limit.
 
@@ -227,13 +228,15 @@ Each loop keeps its own meaning: the headers differ by type and say only what Ui
 
 ### How the drawings were checked against the files
 
-For every one of the 578 sequence pages, a separate script rebuilt the structure from the workflow file, independently of the converter, and compared it with the drawing: each frame's activities in the written order; each decision's branch labels, order and contents; each Try Catch's regions, exception types and contents; each loop's type-specific header and body; and that every activity ending the path is drawn as such. It also checks that no arrow leaves an activity that ends the path.
+For every one of the 578 sequence pages, a separate script rebuilt the structure from the workflow file, independently of the converter, and compared it with the drawing: each frame's activities in the written order; each decision's branch labels, order and contents; each Try Catch's regions, exception types and contents; each loop's type-specific header and body; and that every activity ending the path is drawn as such. Since the Return fix it also checks every arrow: in each sequence, an arrow joins two neighbouring activities exactly when the first does not end the path; in each decision, a branch reaches the meeting dot exactly when it does not end the path, and the dot is drawn exactly when some branch reaches it.
 
 | Run | Pages compared | Mismatches |
 | --- | --- | --- |
 | S1, S2, S3a and S3b drawings, each with the check for its milestone | 578 each | 0 |
 | Controls: the drawings of the milestone before, against each new check | 578 each | S1: 563, S2: 161, S3a: 95, each exactly the pages that milestone was expected to change. S3b: 163, run before the checking script was corrected; the corrected expected set (168) equals the changed set |
 | S3b: arrows leaving an activity that ends the path | 114 such activities | 0 |
+| Return fix: S3b drawings against the arrow-by-arrow check | 578 | 4: exactly the pages with a Return, which S3b drew as an ordinary step. Every other arrow on every page already matched |
+| Return fix drawings, arrow by arrow | 578 | 0; and no arrow leaves any of the 121 activities that end the path |
 
 The geometric checks also ran on every sequence page: every shape inside its container, no overlap, no arrow through a shape, no label over a shape or another label. No problems in any run.
 
@@ -250,11 +253,11 @@ Rendered with the draw.io desktop app and inspected: the largest pages, a combin
 
 ### Remaining gaps and defects
 
-- **Return is not treated as ending the path.** UiPath documents that it "terminates a workflow at a specific point without throwing an error", but S3b does not include it among the activities that end the path. In the corpus, 2 of its 7 uses end the Then branch of an If, and those branches are drawn joining the steps after the If. The fix is one entry in the converter's list; the label would say only that it ends the workflow, because the documentation does not say whether a calling workflow carries on.
+- **Arrows mean "this may run next".** After a Try Catch, or a loop that may run zero times, the arrow stays even when the inside always ends the path: an exception may be caught, or the body may not run. Return's label says only that it ends the workflow: UiPath's documentation does not say whether a workflow that invoked it carries on.
 - **The depth limit is now reached more often.** Each sequence, decision, Try Catch and loop counts as a level, so 35 activities on 15 pages are "Nested too deep to draw" (2 in S2). Raising the limit would draw more, at the cost of wider and taller pages.
 - **Not yet expanded:** application, browser and Excel scopes (the largest remaining group); Parallel, Pick, For Each File, Repeat Number Of Times; nested flowcharts and state machines, and activities inside states and flowchart steps (S4); UiPath's newer Else If (`IfElseIfV2`).
 - **Layout:** a decision with a long display name becomes a very wide, flat diamond; nested decisions make pages wide (largest 3,481 pixels); long sequences make pages tall (largest 12,892 pixels). No overlaps or crossings were found by the checks.
-- Arrows show the order activities are written in, except that none leaves an activity that ends the path. They do not show other effects on execution order.
+- Arrows show the order activities are written in, except where a path ends. They do not show other effects on execution order.
 - Conditions, switch expressions and collections are not shown by default; with `-IncludeDetails` they are shown as text, never evaluated.
 
 ## Reproducing this report
