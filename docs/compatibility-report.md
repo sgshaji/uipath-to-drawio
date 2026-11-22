@@ -3,7 +3,7 @@
 This report has two parts, measured on the same pinned corpus of 93 public projects:
 
 - **[Part 1: release 0.1.0](#part-1-release-010)**, published on 22 November 2026 (tag `v0.1.0`). Its figures are kept as they were measured and describe what the released download does. In 0.1.0, sequences get a summary page.
-- **[Part 2: unreleased work on the main branch](#part-2-unreleased-work-on-the-main-branch)**: milestones S0, S1 and S2, built after 0.1.0. Nothing in Part 2 is in a release yet.
+- **[Part 2: unreleased work on the main branch](#part-2-unreleased-work-on-the-main-branch)**: milestones S0 to S3, built after 0.1.0. Nothing in Part 2 is in a release yet.
 
 All figures come from runs of [`tests/compatibility/Invoke-CompatibilityRun.ps1`](../tests/compatibility/Invoke-CompatibilityRun.ps1) on Windows 11 with PowerShell 7.7 and Windows PowerShell 5.1.
 
@@ -163,70 +163,99 @@ Documented in the 0.1.0 README and confirmed by the corpus:
 
 ## Part 2: Unreleased work on the main branch
 
-After release 0.1.0, milestones S0, S1 and S2 of the [sequence plan](architecture-exploration.md#8-plan-detailed-uipath-sequence-support) were built and each was run against the same 93 projects. Every run converted all 93 projects in both PowerShell versions with identical output, and found no diagram check problems.
+After release 0.1.0, milestones S0 to S3 of the [sequence plan](architecture-exploration.md#8-plan-detailed-uipath-sequence-support) were built, S3 in two parts (S3a Try/Catch, S3b loops), and each was run against the same 93 projects. Every run converted all 93 projects in both PowerShell versions with identical output, and found no diagram check problems. S0, S1 and S2 are on the main branch; S3a and S3b are committed locally for review. Nothing in Part 2 is in a release.
 
 ### What each milestone changed
 
-| Milestone | What it does | Pages changed, compared with the previous run |
-| --- | --- | --- |
-| **S0** | The graph builders say what each shape is; one function decides how it is drawn. No visible change. | None: all 750 pages (657 workflow pages and 93 project maps) byte-identical to 0.1.0 |
-| **S1** | Top-level sequences are drawn step by step: frames for sequences, boxes for activities, invoke steps linked. Any activity holding others is one box, not expanded. | The 578 sequence pages. The other 172 (state machines, flowcharts, project maps, remaining summary pages) byte-identical |
-| **S2** | On sequence pages, If, Else If and Switch are drawn as decisions with their labelled branches, meeting again at a dot; an empty branch goes straight to the dot. | 161 sequence pages: exactly the 161 that contain an If, Else If or Switch within the depth limit (the two sets were compared). The other 589 byte-identical, including every state machine, flowchart and project map page |
+Each run was compared page by page, byte for byte, with the run before it. The pages expected to change were worked out separately, from the workflow files alone (the pages that contain what the milestone draws), and compared with the pages that did change.
+
+| Milestone | What it does | Pages changed | Same as expected? |
+| --- | --- | --- | --- |
+| **S0** | The graph builders say what each shape is; one function decides how it is drawn. No visible change. | None of 750 | Yes |
+| **S1** | Top-level sequences drawn step by step. Any activity holding others is one box, not expanded. | The 578 sequence pages | Yes |
+| **S2** | If, Else If and Switch drawn as decisions with their labelled branches. | 161 | Yes: the pages with a decision |
+| **S3a** | Try Catch drawn as a frame with Try, Catch and Finally regions. | 95 | Yes: the pages with a Try Catch |
+| **S3b** | For Each, For Each Row, While, Do While and Retry Scope drawn as frames holding their body; Break, Continue, Throw, Rethrow and Terminate Workflow end the path. | 168 | Yes: the pages with a loop or an activity that ends the path (see below) |
+
+In every run, all other pages, including every state machine, flowchart and project map page, were byte-identical to the run before.
+
+For S3b, a first comparison expected 163 pages, 5 fewer than changed. The difference was in the checking script, not the converter: it did not recognise 16 Throw activities written with their exception as a child element, and so did not expect their pages to change. After correcting the script, the expected and changed sets are identical (168).
 
 ### Coverage
 
-| Measure | 0.1.0 (released) | S1 | S2 |
-| --- | --- | --- | --- |
-| Projects converted, both PowerShell versions | 93 of 93 | 93 of 93 | 93 of 93 |
-| Workflows with a step-by-step page | 64 of 657 | 642 of 657 | 642 of 657 |
-| Workflows with a summary page only | 593 | 15 | 15 |
-| Activities drawn as their own shape | 299 of 13,191 (2.3%) | 2,429 (18.4%) | 3,451 (26.2%) |
-| Workflows with every activity drawn | 13 | 169 | 246 |
-| Decisions drawn with their branches (If, Else If, Switch) | 0 on sequence pages | 0 | 308 |
-| Activities on sequence pages that hold others, not expanded | n/a (summary pages) | 703 | 525 |
+| Measure | 0.1.0 (released) | S1 | S2 | S3a | S3b |
+| --- | --- | --- | --- | --- | --- |
+| Projects converted, both PowerShell versions | 93 | 93 | 93 | 93 | 93 |
+| Workflows with a step-by-step page | 64 | 642 | 642 | 642 | 642 |
+| Workflows with a summary page only | 593 | 15 | 15 | 15 | 15 |
+| Activities drawn as their own shape (of 13,191) | 299 (2.3%) | 2,429 (18.4%) | 3,451 (26.2%) | 4,390 (33.3%) | **5,639 (42.7%)** |
+| Workflows with every activity drawn | 13 | 169 | 246 | 264 | **350** |
+| Decisions drawn with their branches | 0 | 0 | 308 | 371 | 500 |
+| Try Catches drawn with their regions | 0 | 0 | 0 | 139 | 177 |
+| Loops drawn with their bodies | 0 | 0 | 0 | 0 | 247 |
+| Activities on sequence pages holding others, not expanded | n/a | 703 | 525 | 497 | 378 |
 
-**A step-by-step page is not a complete one.** Of the 642 workflows with a step-by-step page, 246 have every activity drawn. "Activities" counts every activity below each workflow's top-level one: on a state-machine page none of them is drawn (states and transitions are not activities); on a flowchart page, each step's own activity is.
+**A step-by-step page is not a complete one.** Of the 642 workflows with a step-by-step page, 350 have every activity drawn. "Activities" counts every activity below each workflow's top-level one: on a state-machine page none of them is drawn (states and transitions are not activities); on a flowchart page, each step's own activity is.
 
-| Workflow kind (S2) | Workflows | Activities drawn | Every activity drawn |
+| Workflow kind (S3b) | Workflows | Activities drawn | Every activity drawn |
 | --- | --- | --- | --- |
-| Sequence | 578 | 3,152 of 10,663 (30%) | 233 |
+| Sequence | 578 | 5,340 of 10,663 (50%) | 337 |
 | Flowchart | 44 | 299 of 1,239 (24%) | 13 |
 | State machine | 20 | 0 of 1,103 | 0 |
 | Summary pages (10 Try/Catch, 4 other top-level activities, 1 empty) | 15 | 0 of 186 | 0 |
 
-### Control flow drawn in S2
+### Control flow drawn
 
-| Construct | In the corpus | Drawn with branches on sequence pages |
-| --- | --- | --- |
-| If | 925 | 297 |
-| Switch | 27 | 10 |
-| Else If (UiPath's `IfElseIf`) | 8 | 1 |
+| Construct | In the corpus | Drawn on sequence pages (S3b) | How |
+| --- | --- | --- | --- |
+| If | 925 | 482 | Then and Else branches; an empty branch goes straight to the join |
+| Switch | 27 | 17 | One branch per case in the order written, then Default |
+| Else If (`IfElseIf`) | 8 | 1 | A chain of decisions, in the order the conditions are tried |
+| Try Catch | 456 | 177 | Try, each Catch named by exception type, Finally; no arrows between regions |
+| For Each (both forms) | 157 | 112 | Body "runs once for each item in the collection" |
+| For Each Row | 128 | 87 | Body "runs once for each row of the data table" |
+| While (both forms) | 32 | 14 | Body runs while the Condition is true; checked before each run |
+| Do While (both forms) | 16 | 8 | Body runs once, then while the Condition is true; checked after each run |
+| Retry Scope | 46 | 26 | Action, run again on an error or an unmet Condition; the Condition activity |
+| Break, Continue, Throw, Rethrow, Terminate Workflow | 207 | 114 | Labelled with what they do; no arrow leaves them |
 
-Those 308 decisions have 641 branches; 141 of them are empty (a missing Then or Else, an empty case, a missing Default) and are drawn as going straight on. The other If, Switch and Else If activities are not drawn as decisions because they sit somewhere S2 does not expand: inside a Try/Catch, loop or scope; inside a flowchart step or a state; or in one of the 15 summary pages. Two activities are past the depth limit of 8 levels, which counts sequences and decisions, and are each one box ("Nested too deep to draw", holding 1 and 5 activities).
+The rest are not drawn because they sit somewhere the converter does not expand: inside a scope, a nested flowchart or state machine, a flowchart step or a state, one of the 15 summary pages, or past the depth limit.
 
-No Switch case had a missing, null or empty key, so no case label in the corpus is a placeholder.
+Each loop keeps its own meaning: the headers differ by type and say only what UiPath's and Microsoft's documentation states. No loop is drawn with an arrow back to its start. The retry count of a Retry Scope is not shown, because what the number means differs between versions of the activity; an empty Retry Scope Condition (38 of 46 in the corpus) is shown as empty, because its effect is not documented.
 
-**Still not expanded on sequence pages (S2), 525 activities:** Try/Catch 134, For Each 76, Browser Scope 64, Use Application/Browser 40, Comment Out 36, For Each Row 36, Excel Application Scope 32, Open Browser 20, Retry Scope 17, Open Application 9, and 61 more across 22 other types (each 7 or fewer), including 2 past the depth limit. Some counts are higher than in S1 (Try/Catch 113 to 134) because activities that were hidden inside a collapsed If are now drawn in its branches, where they are themselves not expanded.
+**Still not expanded on sequence pages (S3b), 378 activities:** Browser Scope 75, Comment Out 59 (shown as "not run"), Excel Application Scope 57, Use Application/Browser 46, past the depth limit 35, Open Browser 28, Open Application 11, and 67 more across 23 other types (each 7 or fewer), including Parallel, Pick, For Each File, Repeat Number Of Times, nested flowcharts and state machines, and UiPath's newer Else If (`IfElseIfV2`, 1).
 
 ### How the drawings were checked against the files
 
-For every one of the 578 sequence pages, a separate script rebuilt the structure from the workflow file and compared it with the drawing: each frame must hold exactly the file's activities in the written order; each decision must have the file's branches, with the same labels in the same order; each branch must hold what the file holds, or go straight on when the file has nothing. The script reads the XAML independently of the converter.
+For every one of the 578 sequence pages, a separate script rebuilt the structure from the workflow file, independently of the converter, and compared it with the drawing: each frame's activities in the written order; each decision's branch labels, order and contents; each Try Catch's regions, exception types and contents; each loop's type-specific header and body; and that every activity ending the path is drawn as such. It also checks that no arrow leaves an activity that ends the path.
 
 | Run | Pages compared | Mismatches |
 | --- | --- | --- |
-| S1 drawings | 578 | 0 (S1 checks: frames and order) |
-| Control: 0.1.0 drawings against the S1 check | 578 | 563 (the other 15 are empty sequences) |
-| Control: S1 drawings against the S2 check | 578 | 161: exactly the pages with decisions, which S1 drew as boxes |
-| S2 drawings | 578 | 0 |
+| S1, S2, S3a and S3b drawings, each with the check for its milestone | 578 each | 0 |
+| Controls: the drawings of the milestone before, against each new check | 578 each | S1: 563, S2: 161, S3a: 95, each exactly the pages that milestone was expected to change. S3b: 163, run before the checking script was corrected; the corrected expected set (168) equals the changed set |
+| S3b: arrows leaving an activity that ends the path | 114 such activities | 0 |
 
-The geometric checks also ran on every sequence page: every shape inside its container, no overlap, no arrow through a shape, no label over a shape or another label. No problems in S1 or S2. Pages were also rendered with the draw.io desktop app and inspected, including the largest, a Switch, an Else If chain and the page with the most decisions (14).
+The geometric checks also ran on every sequence page: every shape inside its container, no overlap, no arrow through a shape, no label over a shape or another label. No problems in any run.
 
-### Remaining gaps and layout defects
+### Readability
 
-- **Most activities are still not drawn individually** (26% are). The largest groups are Try/Catch and loops (S3), and application and browser scopes, which are not yet in the plan.
-- **Flowcharts and state machines inside sequences**, and **activities inside states and flowchart steps**, are not expanded (S4).
-- **Layout:** a decision with a long display name becomes a very wide, flat diamond; long Else If chains and deeply nested decisions make pages tall (the tallest branching page is about 4,100 pixels). No overlaps or crossings were found by the checks.
-- Conditions and switch expressions are not shown by default; with `-IncludeDetails` they are shown as text, never evaluated.
+Rendered with the draw.io desktop app and inspected: the largest pages, a combined loop and Try Catch, the page with the most Try Catches (14), the page with the most decisions, the widest page and a page that reaches the depth limit several times.
+
+| Sequence pages (S3b) | Median | 90th percentile | Largest |
+| --- | --- | --- | --- |
+| Width (pixels) | 492 | 864 | 3,481 |
+| Height (pixels) | 488 | 1,924 | 12,892 |
+
+4 pages are wider than 2,000 pixels and 4 taller than 5,000. Width comes from decisions whose branches sit side by side, nested inside each other; height from long sequences with every activity drawn.
+
+### Remaining gaps and defects
+
+- **Return is not treated as ending the path.** UiPath documents that it "terminates a workflow at a specific point without throwing an error", but S3b does not include it among the activities that end the path. In the corpus, 2 of its 7 uses end the Then branch of an If, and those branches are drawn joining the steps after the If. The fix is one entry in the converter's list; the label would say only that it ends the workflow, because the documentation does not say whether a calling workflow carries on.
+- **The depth limit is now reached more often.** Each sequence, decision, Try Catch and loop counts as a level, so 35 activities on 15 pages are "Nested too deep to draw" (2 in S2). Raising the limit would draw more, at the cost of wider and taller pages.
+- **Not yet expanded:** application, browser and Excel scopes (the largest remaining group); Parallel, Pick, For Each File, Repeat Number Of Times; nested flowcharts and state machines, and activities inside states and flowchart steps (S4); UiPath's newer Else If (`IfElseIfV2`).
+- **Layout:** a decision with a long display name becomes a very wide, flat diamond; nested decisions make pages wide (largest 3,481 pixels); long sequences make pages tall (largest 12,892 pixels). No overlaps or crossings were found by the checks.
+- Arrows show the order activities are written in, except that none leaves an activity that ends the path. They do not show other effects on execution order.
+- Conditions, switch expressions and collections are not shown by default; with `-IncludeDetails` they are shown as text, never evaluated.
 
 ## Reproducing this report
 

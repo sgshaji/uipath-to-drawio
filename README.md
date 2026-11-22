@@ -8,9 +8,9 @@ Turn UiPath workflow files (`.xaml`) into editable [draw.io](https://www.drawio.
 
 See how a project's workflows invoke one another, review its state machines and flowcharts, and document an automation for review or migration planning, without opening UiPath Studio. The converter runs entirely offline in PowerShell on Windows, with no extra modules, and reports what it drew, summarised or could not read.
 
-**This is a structural overview, not a complete picture of runtime behaviour.** State machines and flowcharts are drawn. Sequences are drawn step by step, with If, Else If and Switch shown with their branches, but the activities inside a Try/Catch, loop or scope are not yet expanded; other top-level workflow types receive summary pages. The tool does not execute workflows or migrate their implementation to another platform.
+**This is a structural overview, not a complete picture of runtime behaviour.** State machines and flowcharts are drawn. Sequences are drawn step by step, with their If, Else If and Switch branches, Try/Catch regions and loops; application and browser scopes are not yet expanded, and other top-level workflow types receive summary pages. The tool does not execute workflows or migrate their implementation to another platform.
 
-> Sequence pages, and the If, Else If and Switch branches on them, are new on the main branch and are not in the 0.1.0 release, which gives sequences a summary page. See the [changelog](CHANGELOG.md).
+> Sequence pages, with their branches, Try/Catch regions and loops, are new on the main branch and are not in the 0.1.0 release, which gives sequences a summary page. See the [changelog](CHANGELOG.md).
 
 [Quick start](#quick-start) | [Supported content](#supported-content) | [Options](#options) | [Detailed usage guide](docs/usage.md)
 
@@ -29,13 +29,13 @@ Support depends on the workflow's **top-level activity**, not just its `.xaml` e
 | Top-level state machine | States, named transitions, start marker and invoked workflows. Activities inside each state are not expanded. |
 | Top-level flowchart | Steps, decisions, switches and their connections. Container activities are summarised rather than expanded. |
 | Project workflow calls | A map of `InvokeWorkflowFile` references. Missing, external and runtime-computed targets are marked rather than guessed. |
-| Top-level sequence | Its activities top to bottom, in the order written, with nested sequences as frames and invoke steps linked to their workflows. If, Else If and Switch are decisions with their labelled branches; an empty branch is shown going straight on. Any other activity that holds others (Try/Catch, loops, scopes) is one dashed box saying how many activities it holds and listing the workflows invoked inside it; its contents are not expanded yet. |
+| Top-level sequence | Its activities top to bottom, in the order written, with nested sequences as frames and invoke steps linked to their workflows. If, Else If and Switch are decisions with their labelled branches; an empty branch is shown going straight on. Try/Catch shows its Try, Catch and Finally regions; loops and Retry Scope show their body. Activities that end the path (Break, Continue, Throw) say so. Any other activity that holds others (application and browser scopes, for example) is one dashed box saying how many activities it holds and listing the workflows invoked inside it; its contents are not expanded yet. |
 | Top-level If, Try/Catch, loops and other activities | A summary listing the workflows they invoke, not a step-by-step diagram. |
 | Nested flowcharts or state machines | Not expanded into their own diagrams. |
 | Flowchart and sequence steps using activities from custom or third-party packages | Plain dashed boxes showing the activity type; the report lists each such type with its package. |
 | Coded workflows (`.cs`), Invoke Process and Run Parallel Process | Coded workflows are not converted; these other process-starting activities do not create project-map links. |
 
-In sequence-heavy projects much of the logic still sits inside Try/Catch, loop and scope activities, which are not expanded yet. The report says, for each workflow, how many of its activities are drawn. See the [usage guide](docs/usage.md) for how each case is represented.
+In sequence-heavy projects some logic still sits inside application and browser scopes, which are not expanded yet. The report says, for each workflow, how many of its activities are drawn. See the [usage guide](docs/usage.md) for how each case is represented.
 
 ## Example output
 
@@ -95,7 +95,7 @@ output\demo\OrderIntakeDemo.drawio
 output\demo\OrderIntakeDemo.conversion-report.txt
 ```
 
-The diagram has a project map and five workflow pages: a flowchart and four sequences. One activity in them, a For Each, is shown as a box that is not expanded. The sample deliberately includes a missing workflow, a runtime-computed file name and an activity from a made-up third-party package, so you can see how incomplete information is reported.
+The diagram has a project map and five workflow pages: a flowchart and four sequences, one of them with a For Each loop. The sample deliberately includes a missing workflow, a runtime-computed file name and an activity from a made-up third-party package, so you can see how incomplete information is reported.
 
 ### 3. Open the diagram and review the report
 

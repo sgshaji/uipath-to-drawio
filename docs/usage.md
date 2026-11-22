@@ -23,7 +23,7 @@ Each file is read as XML. Nothing in it is run or evaluated. The top-level activ
 | --- | --- |
 | State machine | A diagram of states, transitions and invoked workflows. |
 | Flowchart | A diagram of steps, decisions, switches and connections. |
-| Sequence | A sequence page: its activities top to bottom, with its If, Else If and Switch branches. See [Sequences](#sequences). (Release 0.1.0 gives a summary page instead.) |
+| Sequence | A sequence page: its activities top to bottom, with its If, Else If and Switch branches, Try/Catch regions and loops. See [Sequences](#sequences). (Release 0.1.0 gives a summary page instead.) |
 | Other activity, such as Try/Catch or a loop | A summary listing the workflows it invokes. Activities inside it are not drawn step by step. |
 | Empty workflow | A page identifying it as empty. |
 | A `.xaml` file that is not a UiPath workflow | A page explaining that it is not a workflow, plus a report entry. |
@@ -67,10 +67,20 @@ A workflow whose top-level activity is a Sequence gets a sequence page. Sequence
   - An Else If (UiPath's Else If activity) is a chain: the first condition's Else leads to a diamond for the next condition, and so on; the Else block is the last Else. This keeps the order in which the conditions are tried.
   - Each branch holds what the file holds: a sequence is a frame, a nested decision is drawn the same way, and other containers are dashed boxes.
   - **A branch with nothing in it** (a missing Then or Else, an empty case, a missing Default) is an arrow straight to the dot: when it is taken, nothing happens.
-  - Decisions count towards the 8-level depth limit, like sequences.
-- **Any other activity that holds activities is not expanded.** Try/Catch, loops, Retry Scope, application and browser scopes, and containers from other packages are each drawn as one dashed box. The box names the activity type, says how many activities it holds, and lists the workflows invoked inside it. Nothing is drawn or guessed about what it does with its contents.
+  - Decisions count towards the 8-level depth limit, like sequences, Try Catches and loops.
+- **A Try Catch is a frame holding its regions** in the order written: Try, each Catch named after its exception type (for example `System.Exception`, or `BusinessRuleException` when the file gives no .NET namespace), and Finally if there is one. An empty region says "(nothing here)".
+  - No arrows join the regions. Handling an exception is not an ordinary path, and the file does not say which Catch handles a given exception.
+  - The headers say only what Microsoft's Workflow Foundation documentation states: a Catch runs "only if the Try throws one" of its type; Finally runs "after the Try, or a Catch that handled its exception, completes". Finally is not described as always running, because it does not run for an exception that no Catch handles.
+- **A loop is a frame holding its body**, with no arrow looping back. The header of the body says when it runs, in the words of UiPath's and Microsoft's documentation:
+  - For Each: once for each item in the collection. For Each Row: once for each row of the data table.
+  - While: while the Condition is true; the Condition is checked before each run.
+  - Do While: once, then again while the Condition is true; the Condition is checked after each run.
+  - Retry Scope: an Action region ("run again if it throws an error or the Condition is not met") and a Condition region holding the condition activity. The retry count is not shown, because what the number means differs between versions of the activity, and nothing is said about an empty Condition, because its effect is not documented.
+  - With `-IncludeDetails`, a While shows its condition above the body, a Do While below it, and a For Each or For Each Row its collection or data table above it, as text.
+- **Break, Continue, Throw, Rethrow and Terminate Workflow end the path.** Their box has a heavier border and says what the activity does ("exits the loop", "skips the rest of this iteration", "throws an exception", "rethrows the exception", "ends the workflow"), and no arrow leaves it. A sequence ends the path if one of its own activities does; a decision does if every one of its branches does. A Try Catch or a loop does not pass this on: the exception may be caught, and Break and Continue act only inside their loop. UiPath's Return activity is not yet treated this way: it is drawn as an ordinary step, although it ends the workflow.
+- **Any other activity that holds activities is not expanded.** Application and browser scopes, Parallel For Each, For Each File, Repeat Number Of Times, nested flowcharts and state machines, and containers from other packages are each drawn as one dashed box. The box names the activity type, says how many activities it holds, and lists the workflows invoked inside it. Nothing is drawn or guessed about what it does with its contents.
 - A Comment Out box says its activities are commented out and do not run; workflows invoked inside it are listed as commented out.
-- Conditions and switch expressions are never evaluated. They are left out by default; `-IncludeDetails` adds them to the diamond as text.
+- Conditions, switch expressions and collections are never evaluated. They are left out by default; `-IncludeDetails` adds them as text.
 
 The report's line for each workflow ends with "Activities drawn: N of M", counting the activities below the top-level one. On a sequence page, the activities not drawn are exactly those inside the dashed boxes. The line also counts the decisions drawn with their branches, by type, and the activities not expanded, by type. A page with a step diagram is not necessarily complete: only "Activities drawn: N of N" means every activity is shown.
 
@@ -155,8 +165,11 @@ The report avoids absolute input and output paths in its header, but retains fil
 | Purple box | A step that invokes a workflow. |
 | Grey box with a header | A container or summary page listing invoked workflows. |
 | Blue-grey frame with a header | A sequence, holding its activities top to bottom. |
-| Dashed grey box with a header | An activity holding others that is not expanded (such as Try/Catch or a loop), or a Comment Out. The first line says what it is and how many activities it holds. |
+| Dashed grey box with a header | An activity holding others that is not expanded (such as a browser scope), or a Comment Out. The first line says what it is and how many activities it holds. |
 | Small grey dot | On a sequence page, where the branches of a decision meet again. |
+| Frame with a light orange header | A Try Catch, holding its Try, Catch and Finally regions. |
+| Frame with a light green header | A loop or Retry Scope, holding its body. |
+| White box with a heavier border | Break, Continue, Throw, Rethrow or Terminate Workflow: the path ends there, so no arrow leaves it. |
 | Dashed grey box showing a type in brackets | A flowchart step whose activity comes from another library or package (not UiPath or Workflow Foundation). |
 | Yellow diamond | A flow decision. |
 | Orange diamond | A flow switch. |
