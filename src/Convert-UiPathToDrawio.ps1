@@ -128,6 +128,9 @@ $script:Style = @{
     TryFrame       = 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#fbe9dc;strokeColor=#c5895f;swimlaneFillColor=#fffdfb;collapsible=0;'
     Region         = 'swimlane;rounded=0;startSize=24;fontStyle=0;fillColor=#f7f3ef;strokeColor=#c9b8a8;swimlaneFillColor=#ffffff;collapsible=0;'
     RegionEmpty    = 'text;fontSize=11;fontStyle=2;fontColor=#777777;align=center;verticalAlign=middle;'
+    RegionText     = 'text;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;'
+    PathEnd        = 'rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;strokeWidth=2;'
+    LoopFrame      = 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#e3f0e0;strokeColor=#7fa874;swimlaneFillColor=#fcfdfb;collapsible=0;'
     Join           = 'ellipse;fillColor=#666666;strokeColor=#666666;'
     Invoke         = 'shape=process;size=0.04;fillColor=#e1d5e7;strokeColor=#9673a6;'
     InvokeMissing  = 'shape=process;size=0.04;dashed=1;fillColor=#ffffff;strokeColor=#b85450;fontColor=#b85450;'
@@ -167,6 +170,9 @@ $script:RoleStyle = @{
     'tryCatch'        = $script:Style.TryFrame
     'region'          = $script:Style.Region
     'regionEmpty'     = $script:Style.RegionEmpty
+    'regionText'      = $script:Style.RegionText
+    'loop'            = $script:Style.LoopFrame
+    'pathEnd'         = $script:Style.PathEnd
     'join'            = $script:Style.Join
     'decision'        = $script:Style.Decision
     'switch'          = $script:Style.Switch
@@ -1115,11 +1121,29 @@ function Get-FlowchartGraph {
 # path, and which Catch runs is not something the file states. The headers say only what Microsoft's
 # Workflow Foundation documentation states: a Catch runs only if the Try throws its exception type;
 # Finally runs after the Try, or a Catch that handled the exception, completes.
+# A loop (For Each, For Each Row, While, Do While and their UiPath forms, Retry Scope) is a frame holding
+# its body. No arrow loops back: the header of the body says, in the words of UiPath's and Microsoft's
+# documentation, when it runs (for each item; for each row; while the condition holds, checked before or
+# after each run; again after an error or an unmet condition). Retry counts are not shown: what the
+# number means differs between versions of the activity.
+# Break, Continue, Throw, Rethrow and Terminate Workflow end the path: no arrow leaves them, so nothing
+# drawn after them in the same sequence has an arrow in. A sequence ends the path if one of its own
+# activities does; a decision does if every branch does. Try Catch regions and loop bodies do not pass
+# this on: an exception may be caught, and Break and Continue act only inside their loop.
 # Nothing else is expanded: any other activity that holds activities (Try Catch, loops, scopes, and
 # containers from other packages) is drawn as one dashed box saying what it is and how many activities
 # it holds, and listing the workflows invoked inside it. Conditions are never evaluated; they are shown
 # as text only with -IncludeDetails.
 
+# Activities after which nothing more in the same sequence runs: their box says what they do (in the
+# words of UiPath's and Microsoft's documentation), and no arrow leaves them.
+$script:PathEnds = @{
+    'UiPath|Break'                         = 'exits the loop'
+    'UiPath|Continue'                      = 'skips the rest of this iteration'
+    'WorkflowFoundation|Throw'             = 'throws an exception'
+    'WorkflowFoundation|Rethrow'           = 'rethrows the exception'
+    'WorkflowFoundation|TerminateWorkflow' = 'ends the workflow'
+}
 $script:MaxSequenceDepth = 8     # sequences nested deeper than this are collapsed, not drawn
 $script:FrameHeader = 26
 $script:SequencePad = 20
@@ -1157,7 +1181,7 @@ function New-SequenceItem {
     return @{
         Element = $Element; Type = $Type; Source = $Source; Label = $Label
         Shape = 'Box'; Role = 'step'; Link = $null; Children = $null; Rows = $null
-        Inside = 0; Reason = ''; Counts = $Counts
+        Inside = 0; Reason = ''; Counts = $Counts; EndsPath = $false
         Diamond = $null; Branches = $null; Join = $null; BusY = 0.0; JoinBusY = 0.0; Sections = $null
         X = 0.0; Y = 0.0; W = 0.0; H = 0.0
     }
@@ -1187,6 +1211,8 @@ function Set-BranchBlock {
         elseif ($null -ne $b.Element) { $sub = Get-SequenceItem $b.Element ($Depth + 1) $Context $InvokeByElement }
         $Item.Branches.Add(@{ Label = $b.Label; Item = $sub; ColW = 0.0; ColX = 0.0 })
     }
+    $Item.EndsPath = ($Item.Branches.Count -gt 0)
+    foreach ($b in $Item.Branches) { if ($null -eq $b.Item -or -not $b.Item.EndsPath) { $Item.EndsPath = $false } }
     return $Item
 }
 
@@ -1207,6 +1233,45 @@ function Get-ExceptionTypeName {
     return $name
 }
 
+function Get-HeldActivity {
+    # The activity a holder contains: inside an ActivityAction or ActivityFunc, or directly.
+    param($Holder)
+    foreach ($c in (Get-ActivityChildren $Holder)) {
+        if ($c.get_LocalName() -eq 'ActivityAction' -or $c.get_LocalName() -eq 'ActivityFunc') { return (Get-ActivityChild $c) }
+        return $c
+    }
+    return $null
+}
+
+function Get-LoopPart {
+    # The activity in one of a loop's properties (for example ForEach.Body), or $null. With -Content,
+    # an activity written directly inside the loop counts too (Workflow Foundation's While and DoWhile
+    # hold their body that way, and its ForEach holds its ActivityAction that way).
+    param($Element, [string[]]$PropertyNames, [switch]$Content)
+    foreach ($name in $PropertyNames) {
+        foreach ($p in (Get-ChildElement $Element $name)) { return (Get-HeldActivity $p) }
+    }
+    if ($Content) { return (Get-HeldActivity $Element) }
+    return $null
+}
+
+function Get-ExpressionText {
+    # The text of an expression, written as an attribute or as a property element; for a property
+    # element whose value is in an ExpressionText attribute, that text. Never evaluated.
+    param($Element, [string]$AttributeName, [string]$PropertyName)
+    $v = Get-Attr $Element $AttributeName
+    if ($null -ne $v) { return $v.Trim() }
+    foreach ($p in (Get-ChildElement $Element $PropertyName)) {
+        $t = $p.get_InnerText().Trim()
+        if ($t) { return $t }
+        foreach ($d in $p.SelectNodes('.//*')) {
+            $x = Get-Attr $d 'ExpressionText'
+            if ($x) { return $x.Trim() }
+        }
+    }
+    return $null
+}
+
 function Get-SequenceItem {
     # What the sequence page draws for one activity: a frame (a sequence, with its activities), a box
     # (one activity, or an invoked workflow), or a dashed card (an activity holding others, not expanded).
@@ -1217,6 +1282,8 @@ function Get-SequenceItem {
     $isSequence = ($type -eq 'Sequence' -and $source -eq 'WorkflowFoundation')
     $isBranching = (($source -eq 'WorkflowFoundation' -and ($type -eq 'If' -or $type -eq 'Switch')) -or ($source -eq 'UiPath' -and $type -eq 'IfElseIf'))
     $isTryCatch = ($source -eq 'WorkflowFoundation' -and $type -eq 'TryCatch')
+    $loops = @{ 'WorkflowFoundation' = @('ForEach', 'While', 'DoWhile'); 'UiPath' = @('ForEach', 'ForEachRow', 'InterruptibleWhile', 'InterruptibleDoWhile', 'RetryScope') }
+    $isLoop = ($loops.ContainsKey($source) -and $loops[$source] -contains $type)
     if ($isSequence -and $Depth -le $script:MaxSequenceDepth) {
         $children = Get-ActivityChildren $Element
         if ($children.Count -eq 0) {
@@ -1226,7 +1293,11 @@ function Get-SequenceItem {
         $item.Shape = 'Frame'
         $item.Role = 'sequence'
         $item.Children = New-Object System.Collections.Generic.List[object]
-        foreach ($c in $children) { $item.Children.Add((Get-SequenceItem $c ($Depth + 1) $Context $InvokeByElement)) }
+        foreach ($c in $children) {
+            $child = Get-SequenceItem $c ($Depth + 1) $Context $InvokeByElement
+            $item.Children.Add($child)
+            if ($child.EndsPath) { $item.EndsPath = $true }
+        }
         return $item
     }
     if ($type -eq 'InvokeWorkflowFile' -and $source -eq 'UiPath') {
@@ -1238,6 +1309,48 @@ function Get-SequenceItem {
             $item.Link = $row.Link
             return $item
         }
+    }
+    if ($isLoop -and $Depth -le $script:MaxSequenceDepth) {
+        # Regions, each @{ Header; Item } or, for an expression shown with -IncludeDetails, @{ Header; Text }.
+        $item.Shape = 'Regions'
+        $item.Role = 'loop'
+        $item.Sections = New-Object System.Collections.Generic.List[object]
+        $sub = { param($a) if ($null -eq $a) { return $null }; return (Get-SequenceItem $a ($Depth + 1) $Context $InvokeByElement) }
+        switch ($type) {
+            'ForEach' {
+                if ($Context.IncludeDetails) {
+                    $values = Get-ExpressionText $Element 'Values' 'ForEach.Values'
+                    if ($values) { $item.Sections.Add(@{ Header = 'Items'; Item = $null; Text = $values }) }
+                }
+                $item.Sections.Add(@{ Header = 'Body: runs once for each item in the collection'; Item = (& $sub (Get-LoopPart $Element @('ForEach.Body') -Content)) })
+            }
+            'ForEachRow' {
+                if ($Context.IncludeDetails) {
+                    $table = Get-ExpressionText $Element 'DataTable' 'ForEachRow.DataTable'
+                    if ($table) { $item.Sections.Add(@{ Header = 'Data table'; Item = $null; Text = $table }) }
+                }
+                $item.Sections.Add(@{ Header = 'Body: runs once for each row of the data table'; Item = (& $sub (Get-LoopPart $Element @('ForEachRow.Body'))) })
+            }
+            { $_ -eq 'While' -or $_ -eq 'InterruptibleWhile' } {
+                if ($Context.IncludeDetails) {
+                    $cond = Get-ExpressionText $Element 'Condition' ($type + '.Condition')
+                    if ($cond) { $item.Sections.Add(@{ Header = 'Condition (checked before each run of the Body)'; Item = $null; Text = $cond }) }
+                }
+                $item.Sections.Add(@{ Header = 'Body: runs while the Condition is true; the Condition is checked before each run'; Item = (& $sub (Get-LoopPart $Element @($type + '.Body') -Content)) })
+            }
+            { $_ -eq 'DoWhile' -or $_ -eq 'InterruptibleDoWhile' } {
+                $item.Sections.Add(@{ Header = 'Body: runs once, then again while the Condition is true; the Condition is checked after each run'; Item = (& $sub (Get-LoopPart $Element @($type + '.Body') -Content)) })
+                if ($Context.IncludeDetails) {
+                    $cond = Get-ExpressionText $Element 'Condition' ($type + '.Condition')
+                    if ($cond) { $item.Sections.Add(@{ Header = 'Condition (checked after each run of the Body)'; Item = $null; Text = $cond }) }
+                }
+            }
+            'RetryScope' {
+                $item.Sections.Add(@{ Header = 'Action: run again if it throws an error or the Condition is not met'; Item = (& $sub (Get-LoopPart $Element @('RetryScope.ActivityBody'))) })
+                $item.Sections.Add(@{ Header = 'Condition'; Item = (& $sub (Get-LoopPart $Element @('RetryScope.Condition'))) })
+            }
+        }
+        return $item
     }
     if ($isTryCatch -and $Depth -le $script:MaxSequenceDepth) {
         # Regions in the order written. Each is @{ Header; Item (or $null when empty) }.
@@ -1346,7 +1459,7 @@ function Get-SequenceItem {
         $item.Inside = $inside
         $activities = Format-Count $inside 'activity' 'activities'
         $suffix = ''
-        if ($isSequence -or (($isBranching -or $isTryCatch) -and $Depth -gt $script:MaxSequenceDepth)) {
+        if ($isSequence -or (($isBranching -or $isTryCatch -or $isLoop) -and $Depth -gt $script:MaxSequenceDepth)) {
             $item.Reason = 'depth'
             $text = 'Nested too deep to draw: ' + $activities + ' inside'
         }
@@ -1379,6 +1492,11 @@ function Get-SequenceItem {
         $item.Role = 'otherActivity'
         $item.Label = $item.Label + "`n[" + $type + ']'
     }
+    elseif ($script:PathEnds.ContainsKey($source + '|' + $type)) {
+        $item.Role = 'pathEnd'
+        $item.Label = $item.Label + "`n(" + $script:PathEnds[$source + '|' + $type] + ')'
+        $item.EndsPath = $true
+    }
     return $item
 }
 
@@ -1390,6 +1508,7 @@ function Set-SequenceLayout {
         $widest = [Math]::Max(160.0, (Get-TextSize $Item.Label 7.5 16).W + 40)
         foreach ($sec in $Item.Sections) {
             if ($null -ne $sec.Item) { Set-SequenceLayout $sec.Item; $innerW = $sec.Item.W; $innerH = $sec.Item.H }
+            elseif ($sec.ContainsKey('Text') -and $sec.Text) { $t = Get-TextSize $sec.Text 6.6 14; $innerW = $t.W + 20; $innerH = $t.H + 10 }
             else { $innerW = (Get-TextSize '(nothing here)' 6.6 14).W + 20; $innerH = 24.0 }
             $sec.InnerW = $innerW
             $sec.InnerH = $innerH
@@ -1485,10 +1604,13 @@ function Add-SequenceItem {
     param($Page, $Item, [string]$ParentId)
     $style = $script:Style.Edge + 'edgeStyle=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;'
     if ($Item.Shape -eq 'Regions') {
-        $id = Add-Vertex $Page $Item.Label (Get-NodeStyle @{ Role = 'tryCatch'; Kind = 'Regions'; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId
+        $id = Add-Vertex $Page $Item.Label (Get-NodeStyle @{ Role = $Item.Role; Kind = 'Regions'; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId
         foreach ($sec in $Item.Sections) {
             $secId = Add-Vertex $Page $sec.Header (Get-NodeStyle @{ Role = 'region'; Kind = 'Region'; LabelSide = $null }) $sec.X $sec.Y $sec.W $sec.H $id
             if ($null -ne $sec.Item) { [void](Add-SequenceItem $Page $sec.Item $secId) }
+            elseif ($sec.ContainsKey('Text') -and $sec.Text) {
+                [void](Add-Vertex $Page $sec.Text (Get-NodeStyle @{ Role = 'regionText'; Kind = 'Text'; LabelSide = $null }) (($sec.W - $sec.InnerW) / 2) ($script:RegionHeader + $script:SequencePad) $sec.InnerW $sec.InnerH $secId)
+            }
             else {
                 [void](Add-Vertex $Page '(nothing here)' (Get-NodeStyle @{ Role = 'regionEmpty'; Kind = 'Text'; LabelSide = $null }) (($sec.W - $sec.InnerW) / 2) ($script:RegionHeader + $script:SequencePad) $sec.InnerW $sec.InnerH $secId)
             }
@@ -1520,7 +1642,7 @@ function Add-SequenceItem {
                 [void](Add-EdgeCell $Page $b.Label $style $diamondId $branchIds[$i] $down (2 * $labelAt / $length - 1) 0 $id)
                 $back = New-Object System.Collections.Generic.List[object]
                 if (-not $straight) { $back.Add(@($b.ColX, $Item.JoinBusY)); $back.Add(@($cx, $Item.JoinBusY)) }
-                [void](Add-EdgeCell $Page '' $style $branchIds[$i] $joinId $back $null 0 $id)
+                if (-not $b.Item.EndsPath) { [void](Add-EdgeCell $Page '' $style $branchIds[$i] $joinId $back $null 0 $id) }
             }
             else {
                 # Nothing in this branch: straight on to the dot.
@@ -1542,7 +1664,10 @@ function Add-SequenceItem {
     if ($Item.Shape -eq 'Frame') {
         $ids = New-Object System.Collections.Generic.List[string]
         foreach ($c in $Item.Children) { $ids.Add((Add-SequenceItem $Page $c $id)) }
-        for ($i = 1; $i -lt $ids.Count; $i++) { [void](Add-EdgeCell $Page '' $style $ids[$i - 1] $ids[$i] $null $null 0 $id) }
+        for ($i = 1; $i -lt $ids.Count; $i++) {
+            if ($Item.Children[$i - 1].EndsPath) { continue }
+            [void](Add-EdgeCell $Page '' $style $ids[$i - 1] $ids[$i] $null $null 0 $id)
+        }
     }
     return $id
 }
@@ -1563,7 +1688,8 @@ function Add-SequenceItemStats {
             foreach ($b in $c.Branches) { if ($null -ne $b.Item) { Add-SequenceItemStats $b.Item $Stats } }
         }
         'Regions' {
-            if ($c.Counts) { $Stats.TryCatches++ }
+            if ($c.Counts -and $c.Role -eq 'tryCatch') { $Stats.TryCatches++ }
+            if ($c.Counts -and $c.Role -eq 'loop') { $Stats.Loops++; $Stats.LoopKinds[$c.Type] = 1 + [int]$Stats.LoopKinds[$c.Type] }
             foreach ($sec in $c.Sections) { if ($null -ne $sec.Item) { Add-SequenceItemStats $sec.Item $Stats } }
         }
         'Card' {
@@ -2455,10 +2581,10 @@ function New-WorkflowPage {
         $root.X = $left
         $root.Y = $top
         [void](Add-SequenceItem $page $root '1')
-        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{}; Branching = 0; BranchKinds = @{}; TryCatches = 0 }
+        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{}; Branching = 0; BranchKinds = @{}; TryCatches = 0; Loops = 0; LoopKinds = @{} }
         if ($root.Shape -eq 'Frame') { Get-SequenceStats $root $stats }
         $Workflow.NotDrawn = [Math]::Max(0, $Workflow.ActivityCount - $stats.Drawn)
-        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences + $stats.Branching + $stats.TryCatches) 'step' 'steps') + ' drawn top to bottom'
+        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences + $stats.Branching + $stats.TryCatches + $stats.Loops) 'step' 'steps') + ' drawn top to bottom'
         if ($stats.Sequences -gt 0) { $text += ', including ' + (Format-Count $stats.Sequences 'nested sequence' 'nested sequences') }
         if ($stats.Branching -gt 0) {
             $kinds = @($stats.BranchKinds.Keys | Sort-Object | ForEach-Object { if ($stats.BranchKinds[$_] -gt 1) { $_ + ' x' + $stats.BranchKinds[$_] } else { $_ } })
@@ -2468,6 +2594,12 @@ function New-WorkflowPage {
         }
         if ($stats.TryCatches -gt 0) {
             $text += '; ' + (Format-Count $stats.TryCatches 'Try Catch' 'Try Catches') + ' drawn with Try, Catch and Finally regions'
+        }
+        if ($stats.Loops -gt 0) {
+            $kinds = @($stats.LoopKinds.Keys | Sort-Object | ForEach-Object { if ($stats.LoopKinds[$_] -gt 1) { $_ + ' x' + $stats.LoopKinds[$_] } else { $_ } })
+            $with = ' drawn with their bodies ('
+            if ($stats.Loops -eq 1) { $with = ' drawn with its body (' }
+            $text += '; ' + (Format-Count $stats.Loops 'loop' 'loops') + $with + ($kinds -join ', ') + ')'
         }
         if ($stats.Collapsed -gt 0) {
             $kinds = @($stats.Kinds.Keys | Sort-Object | ForEach-Object { if ($stats.Kinds[$_] -gt 1) { $_ + ' x' + $stats.Kinds[$_] } else { $_ } })
@@ -2656,7 +2788,9 @@ function Get-ReportText {
         if ($wf.Kind -eq 'Sequence' -and $wf.NotDrawn -gt 0) {
             $where = 'the ' + $wf.Collapsed + ' activities drawn as dashed boxes, which list the workflows invoked inside them.'
             if ($wf.Collapsed -eq 1) { $where = 'the activity drawn as a dashed box, which lists the workflows invoked inside it.' }
-            $notDrawn.Add('  ' + $wf.Rel + ' (sequence): ' + $activities + ' not drawn; they are inside ' + $where)
+            $they = 'they are'
+            if ($wf.NotDrawn -eq 1) { $they = 'it is' }
+            $notDrawn.Add('  ' + $wf.Rel + ' (sequence): ' + $activities + ' not drawn; ' + $they + ' inside ' + $where)
         }
         if ($wf.Kind -eq 'Flowchart' -and $wf.NotDrawn -gt 0) { $notDrawn.Add('  ' + $wf.Rel + ' (flowchart): ' + $activities + ' inside steps not drawn; a step holding a sequence lists the workflows it invokes.') }
     }

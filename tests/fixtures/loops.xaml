@@ -1,0 +1,166 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Loops"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:mva="clr-namespace:Microsoft.VisualBasic.Activities;assembly=System.Activities"
+ xmlns:s="clr-namespace:System;assembly=mscorlib"
+ xmlns:sd="clr-namespace:System.Data;assembly=System.Data"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input: loops and retries inside a sequence. In order:
+         1  UiPath For Each: a sequence body with an If whose Then is a Continue, and an invoke
+         2  Workflow Foundation ForEach: its ActivityAction written directly inside it
+         3  For Each Row: a Try Catch as its body
+         4  Workflow Foundation While with a Break in its body
+         5  a While with no body
+         6  UiPath While (InterruptibleWhile) with an invoke in its body
+         7  Workflow Foundation DoWhile whose condition is an expression element (ExpressionText)
+         8  UiPath Do While (InterruptibleDoWhile)
+         9  Retry Scope: an Action with an invoke, and a Condition activity
+        10  Retry Scope with an empty Condition
+        11  a For Each inside a For Each
+        12  a Parallel For Each: not one of the loops drawn, so it stays collapsed
+        13  a Do While inside the Then branch of an If
+       No loop is drawn with an arrow back to its start.
+       39 activities below the top-level sequence; 38 are drawn and 1 is inside a collapsed box.
+       13 loops are drawn with their bodies (DoWhile x2, ForEach x4, ForEachRow, InterruptibleDoWhile,
+       InterruptibleWhile, RetryScope x2, While x2); 1 Try Catch; 2 decisions (If). -->
+  <Sequence DisplayName="Work through orders" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <ui:ForEach x:TypeArguments="x:Object" DisplayName="For each order" Values="[orders]" sap2010:WorkflowViewState.IdRef="ForEach`1_1">
+      <ui:ForEach.Body>
+        <ActivityAction x:TypeArguments="x:Object">
+          <ActivityAction.Argument>
+            <DelegateInArgument x:TypeArguments="x:Object" Name="order" />
+          </ActivityAction.Argument>
+          <Sequence DisplayName="Handle one order" sap2010:WorkflowViewState.IdRef="Sequence_2">
+            <Assign DisplayName="Read the order" sap2010:WorkflowViewState.IdRef="Assign_1" />
+            <If Condition="[order.IsCancelled]" DisplayName="Is it cancelled?" sap2010:WorkflowViewState.IdRef="If_1">
+              <If.Then>
+                <ui:Continue DisplayName="Skip it" sap2010:WorkflowViewState.IdRef="Continue_1" />
+              </If.Then>
+            </If>
+            <ui:InvokeWorkflowFile DisplayName="Ship it" WorkflowFileName="Ship.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_1" />
+          </Sequence>
+        </ActivityAction>
+      </ui:ForEach.Body>
+    </ui:ForEach>
+    <ForEach x:TypeArguments="x:String" DisplayName="For each name" Values="[names]" sap2010:WorkflowViewState.IdRef="ForEach`1_2">
+      <ActivityAction x:TypeArguments="x:String">
+        <ActivityAction.Argument>
+          <DelegateInArgument x:TypeArguments="x:String" Name="name" />
+        </ActivityAction.Argument>
+        <ui:LogMessage DisplayName="Log the name" sap2010:WorkflowViewState.IdRef="LogMessage_1" />
+      </ActivityAction>
+    </ForEach>
+    <ui:ForEachRow DisplayName="For each row" DataTable="[table]" sap2010:WorkflowViewState.IdRef="ForEachRow_1">
+      <ui:ForEachRow.Body>
+        <ActivityAction x:TypeArguments="sd:DataRow">
+          <ActivityAction.Argument>
+            <DelegateInArgument x:TypeArguments="sd:DataRow" Name="row" />
+          </ActivityAction.Argument>
+          <TryCatch DisplayName="Read the row safely" sap2010:WorkflowViewState.IdRef="TryCatch_1">
+            <TryCatch.Try>
+              <Assign DisplayName="Read the row" sap2010:WorkflowViewState.IdRef="Assign_2" />
+            </TryCatch.Try>
+            <TryCatch.Catches>
+              <Catch x:TypeArguments="s:Exception" sap2010:WorkflowViewState.IdRef="Catch`1_1">
+                <ActivityAction x:TypeArguments="s:Exception">
+                  <ActivityAction.Argument>
+                    <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+                  </ActivityAction.Argument>
+                  <ui:LogMessage DisplayName="Log the bad row" sap2010:WorkflowViewState.IdRef="LogMessage_2" />
+                </ActivityAction>
+              </Catch>
+            </TryCatch.Catches>
+          </TryCatch>
+        </ActivityAction>
+      </ui:ForEachRow.Body>
+    </ui:ForEachRow>
+    <While Condition="[hasWork]" DisplayName="While there is work" sap2010:WorkflowViewState.IdRef="While_1">
+      <Sequence DisplayName="Do the work" sap2010:WorkflowViewState.IdRef="Sequence_3">
+        <Assign DisplayName="Take the next task" sap2010:WorkflowViewState.IdRef="Assign_3" />
+        <ui:Break DisplayName="Stop early" sap2010:WorkflowViewState.IdRef="Break_1" />
+      </Sequence>
+    </While>
+    <While Condition="[False]" DisplayName="Wait for nothing" sap2010:WorkflowViewState.IdRef="While_2" />
+    <ui:InterruptibleWhile Condition="[queueBusy]" DisplayName="Poll the queue" sap2010:WorkflowViewState.IdRef="InterruptibleWhile_1">
+      <ui:InterruptibleWhile.Body>
+        <Sequence DisplayName="Poll" sap2010:WorkflowViewState.IdRef="Sequence_4">
+          <ui:InvokeWorkflowFile DisplayName="Check the queue" WorkflowFileName="Queue\Check.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_2" />
+        </Sequence>
+      </ui:InterruptibleWhile.Body>
+    </ui:InterruptibleWhile>
+    <DoWhile DisplayName="Ask until valid" sap2010:WorkflowViewState.IdRef="DoWhile_1">
+      <DoWhile.Condition>
+        <mva:VisualBasicValue x:TypeArguments="x:Boolean" ExpressionText="Not isValid" />
+      </DoWhile.Condition>
+      <Sequence DisplayName="Ask" sap2010:WorkflowViewState.IdRef="Sequence_5">
+        <Assign DisplayName="Ask again" sap2010:WorkflowViewState.IdRef="Assign_4" />
+      </Sequence>
+    </DoWhile>
+    <ui:InterruptibleDoWhile Condition="[Not loggedIn]" DisplayName="Retry the login" sap2010:WorkflowViewState.IdRef="InterruptibleDoWhile_1">
+      <ui:InterruptibleDoWhile.Body>
+        <Assign DisplayName="Try to log in" sap2010:WorkflowViewState.IdRef="Assign_5" />
+      </ui:InterruptibleDoWhile.Body>
+    </ui:InterruptibleDoWhile>
+    <ui:RetryScope DisplayName="Open the portal" NumberOfRetries="3" sap2010:WorkflowViewState.IdRef="RetryScope_1">
+      <ui:RetryScope.ActivityBody>
+        <ActivityAction>
+          <Sequence DisplayName="Open" sap2010:WorkflowViewState.IdRef="Sequence_6">
+            <ui:InvokeWorkflowFile DisplayName="Open it" WorkflowFileName="Portal\Open.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_3" />
+          </Sequence>
+        </ActivityAction>
+      </ui:RetryScope.ActivityBody>
+      <ui:RetryScope.Condition>
+        <ActivityFunc x:TypeArguments="x:Boolean">
+          <ui:CheckTrue DisplayName="Portal is open" Expression="[portalOpen]" sap2010:WorkflowViewState.IdRef="CheckTrue_1" />
+        </ActivityFunc>
+      </ui:RetryScope.Condition>
+    </ui:RetryScope>
+    <ui:RetryScope DisplayName="Retry the call" sap2010:WorkflowViewState.IdRef="RetryScope_2">
+      <ui:RetryScope.ActivityBody>
+        <ActivityAction>
+          <Assign DisplayName="Call" sap2010:WorkflowViewState.IdRef="Assign_6" />
+        </ActivityAction>
+      </ui:RetryScope.ActivityBody>
+      <ui:RetryScope.Condition>
+        <ActivityFunc x:TypeArguments="x:Boolean" />
+      </ui:RetryScope.Condition>
+    </ui:RetryScope>
+    <ui:ForEach x:TypeArguments="x:Object" DisplayName="For each customer" Values="[customers]" sap2010:WorkflowViewState.IdRef="ForEach`1_3">
+      <ui:ForEach.Body>
+        <ActivityAction x:TypeArguments="x:Object">
+          <ActivityAction.Argument>
+            <DelegateInArgument x:TypeArguments="x:Object" Name="customer" />
+          </ActivityAction.Argument>
+          <ui:ForEach x:TypeArguments="x:Object" DisplayName="For each invoice" Values="[customer.Invoices]" sap2010:WorkflowViewState.IdRef="ForEach`1_4">
+            <ui:ForEach.Body>
+              <ActivityAction x:TypeArguments="x:Object">
+                <ActivityAction.Argument>
+                  <DelegateInArgument x:TypeArguments="x:Object" Name="invoice" />
+                </ActivityAction.Argument>
+                <ui:LogMessage DisplayName="Log the invoice" sap2010:WorkflowViewState.IdRef="LogMessage_3" />
+              </ActivityAction>
+            </ui:ForEach.Body>
+          </ui:ForEach>
+        </ActivityAction>
+      </ui:ForEach.Body>
+    </ui:ForEach>
+    <ParallelForEach x:TypeArguments="x:Object" DisplayName="In parallel" Values="[jobs]" sap2010:WorkflowViewState.IdRef="ParallelForEach`1_1">
+      <ActivityAction x:TypeArguments="x:Object">
+        <ActivityAction.Argument>
+          <DelegateInArgument x:TypeArguments="x:Object" Name="job" />
+        </ActivityAction.Argument>
+        <Assign DisplayName="Do one" sap2010:WorkflowViewState.IdRef="Assign_7" />
+      </ActivityAction>
+    </ParallelForEach>
+    <If Condition="[retriesLeft]" DisplayName="Any retries left?" sap2010:WorkflowViewState.IdRef="If_2">
+      <If.Then>
+        <DoWhile Condition="[Not done]" DisplayName="Keep trying" sap2010:WorkflowViewState.IdRef="DoWhile_2">
+          <Assign DisplayName="Try" sap2010:WorkflowViewState.IdRef="Assign_8" />
+        </DoWhile>
+      </If.Then>
+    </If>
+  </Sequence>
+</Activity>

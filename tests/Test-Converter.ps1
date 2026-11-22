@@ -539,8 +539,8 @@ try {
     Assert ($mapEdges -eq 7) "map draws one arrow per caller and callee pair (found $mapEdges)"
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
     Assert ($report -match 'WarmUpCache \(Acme\.Robotics\.Activities\) - 1, in Framework\\Initialize\.xaml') 'report lists the activity from another package'
-    Assert ($report -match 'ProcessOrders\.xaml \(sequence\): 3 activities not drawn; they are inside the activity drawn as a dashed box') 'report says how many activities a sequence page leaves inside boxes not expanded'
-    Assert ($report -match 'ProcessOrders\.xaml - sequence: 2 steps drawn top to bottom; 1 activity holding others not expanded \(ForEach\)\. Activities drawn: 2 of 5\.') 'report describes the sequence page and counts what it draws'
+    Assert ($report -notmatch 'ProcessOrders\.xaml \(sequence\): \d+ activit') 'a sequence page that draws every activity gets no not-drawn line'
+    Assert ($report -match 'ProcessOrders\.xaml - sequence: 5 steps drawn top to bottom, including 1 nested sequence; 1 loop drawn with its body \(ForEach\)\. Activities drawn: 5 of 5\.') 'report describes the sequence page and counts what it draws'
     $tryProject = Join-Path $work 'try-top'
     [void](New-Item -ItemType Directory -Path $tryProject)
     [System.IO.File]::WriteAllText((Join-Path $tryProject 'Guarded.xaml'), ('<Activity x:Class="Guarded" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:ui="http://schemas.uipath.com/workflow/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">' +
@@ -1046,6 +1046,66 @@ try {
     Assert (@($info.Values | Where-Object { [string]$_.Label -eq 'Nested too deep to draw: 2 activities inside' }).Count -eq 1 -and -not @($info.Values | Where-Object { [string]$_.Label -eq 'Guard 9' }).Count) 'past the depth limit a Try Catch is one box saying how much it holds'
     $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'try-catch.xaml'); OutputPath = (Join-Path $work 'try-catch-again') }
     Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with Try Catches comes out the same every time'
+
+    # --- Loops and retries inside sequences --------------------------------------------------------
+    Write-Host "`nLoops"
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'loops.xaml'); OutputPath = (Join-Path $work 'loops') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $page = $d.Doc.SelectNodes('/mxfile/diagram')[0]
+    $frameProblems = Get-FrameProblems $page
+    Assert ($frameProblems.Count -eq 0) ('loops: every shape inside its container, no overlaps, no arrow through a shape' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
+    $report = [System.IO.File]::ReadAllText($r.ReportFile)
+    Assert ($report -match 'Activities drawn: 38 of 39\.') 'report counts the activities drawn (38 of 39)'
+    Assert ($report -match '13 loops drawn with their bodies \(DoWhile x2, ForEach x4, ForEachRow, InterruptibleDoWhile, InterruptibleWhile, RetryScope x2, While x2\)') 'report counts the loops drawn, by type'
+    $info = @{}
+    foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) { $ci = Get-CellInfo $c; $info[$ci.Id] = $ci }
+    function Get-LoopRegions($Label) {
+        # "header>content" for each region of a loop, top to bottom.
+        $lf = @($info.Values | Where-Object { $_.Vertex -and ([string]$_.Label -split "`n")[0] -eq $Label -and $_.Style -like 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#e3f0e0;*' })[0]
+        $regions = @($info.Values | Where-Object { $_.Vertex -and $_.Parent -eq $lf.Id } | Sort-Object { [double]$_.Inner.SelectSingleNode('mxGeometry').GetAttribute('y') })
+        return (@($regions | ForEach-Object {
+                    $rid = $_.Id
+                    $inside = @($info.Values | Where-Object { $_.Vertex -and $_.Parent -eq $rid })[0]
+                    [string]$_.Label + '>' + ([string]$inside.Label -split "`n")[0]
+                }) -join ' / ')
+    }
+    $whileBody = 'Body: runs while the Condition is true; the Condition is checked before each run'
+    $doBody = 'Body: runs once, then again while the Condition is true; the Condition is checked after each run'
+    Assert ((Get-LoopRegions 'For each order') -eq 'Body: runs once for each item in the collection>Handle one order') "UiPath's For Each: its body, and what the documentation says about when it runs"
+    Assert ((Get-LoopRegions 'For each name') -eq 'Body: runs once for each item in the collection>Log the name') "Workflow Foundation's ForEach, whose body is written directly inside it"
+    Assert ((Get-LoopRegions 'For each row') -eq 'Body: runs once for each row of the data table>Read the row safely') 'For Each Row, with a Try Catch as its body'
+    Assert ((Get-LoopRegions 'While there is work') -eq "$whileBody>Do the work") 'While: the condition is checked before each run'
+    Assert ((Get-LoopRegions 'Wait for nothing') -eq "$whileBody>(nothing here)") 'a While with no body says so'
+    Assert ((Get-LoopRegions 'Poll the queue') -eq "$whileBody>Poll") "UiPath's While (InterruptibleWhile)"
+    Assert ((Get-LoopRegions 'Ask until valid') -eq "$doBody>Ask") 'Do While: the body runs once and the condition is checked after each run'
+    Assert ((Get-LoopRegions 'Retry the login') -eq "$doBody>Try to log in") "UiPath's Do While (InterruptibleDoWhile)"
+    Assert ((Get-LoopRegions 'Open the portal') -eq 'Action: run again if it throws an error or the Condition is not met>Open / Condition>Portal is open') 'Retry Scope: its Action and its Condition activity'
+    Assert ((Get-LoopRegions 'Retry the call') -eq 'Action: run again if it throws an error or the Condition is not met>Call / Condition>(nothing here)') 'a Retry Scope with an empty Condition says so, and nothing is guessed about it'
+    Assert ((Get-LoopRegions 'For each customer') -eq 'Body: runs once for each item in the collection>For each invoice') 'a loop inside a loop'
+    Assert ($d.Text -notmatch 'NumberOfRetries|value="3"') 'retry counts are not shown: their meaning differs between versions'
+    $loopArrows = @($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('source') -eq $_.GetAttribute('target') }).Count
+    Assert ($loopArrows -eq 0) 'no arrow loops back'
+    Assert (@($info.Values | Where-Object { [string]$_.Label -eq '[ParallelForEach] 1 activity inside, not drawn in version 1' }).Count -eq 1) 'a Parallel For Each is not one of the loops drawn, so it stays one box'
+    # Activities that end the path.
+    $skip = @($info.Values | Where-Object { [string]$_.Label -eq "Skip it`n(skips the rest of this iteration)" })
+    $stop = @($info.Values | Where-Object { [string]$_.Label -eq "Stop early`n(exits the loop)" })
+    Assert ($skip.Count -eq 1 -and $stop.Count -eq 1) 'Continue and Break say what they do'
+    $outOfEnds = @($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('source') -eq $skip[0].Id -or $_.GetAttribute('source') -eq $stop[0].Id }).Count
+    Assert ($outOfEnds -eq 0) 'no arrow leaves a Continue or a Break'
+    $shipId = @($info.Values | Where-Object { ([string]$_.Label -split "`n")[0] -eq 'Ship it' })[0].Id
+    Assert (@($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]') | Where-Object { $_.GetAttribute('target') -eq $shipId }).Count -eq 1) 'the step after the If is still reached, by its other branch'
+    # -IncludeDetails: the condition, where it is checked.
+    $rd = Invoke-Converter @{ Path = (Join-Path $fixtures 'loops.xaml'); OutputPath = (Join-Path $work 'loops-details'); IncludeDetails = $true }
+    $dd = Read-Drawio $rd.DrawioFiles[0]
+    $page = $dd.Doc.SelectNodes('/mxfile/diagram')[0]
+    $info = @{}
+    foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) { $ci = Get-CellInfo $c; $info[$ci.Id] = $ci }
+    Assert ((Get-LoopRegions 'While there is work') -eq "Condition (checked before each run of the Body)>[hasWork] / $whileBody>Do the work") '-IncludeDetails: a While shows its condition above its body'
+    Assert ((Get-LoopRegions 'Ask until valid') -eq "$doBody>Ask / Condition (checked after each run of the Body)>Not isValid") '-IncludeDetails: a Do While shows its condition below its body, read from an ExpressionText'
+    Assert ((Get-LoopRegions 'For each order') -eq 'Items>[orders] / Body: runs once for each item in the collection>Handle one order') '-IncludeDetails: a For Each shows its collection'
+    Assert ((Get-FrameProblems $page).Count -eq 0) '-IncludeDetails: still no overlaps'
+    $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'loops.xaml'); OutputPath = (Join-Path $work 'loops-again') }
+    Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with loops comes out the same every time'
 
     # --- Regression baseline: state machine, flowchart and project map pages, byte for byte --------
     Write-Host "`nRegression baseline"
