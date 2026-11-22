@@ -265,6 +265,57 @@ function Get-ArrowProblems {
     return , $problems
 }
 
+function Get-FrameProblems {
+    # For pages drawn as nested containers (sequence pages): every shape lies inside its container,
+    # below the container's header; shapes in one container do not overlap; every arrow joins two
+    # shapes in the same container and runs straight down from one to the next.
+    param($Diagram)
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $problems = New-Object System.Collections.Generic.List[string]
+    $shapes = @{}
+    foreach ($c in $Diagram.SelectNodes('mxGraphModel/root/*')) {
+        $info = Get-CellInfo $c
+        if (-not $info.Vertex) { continue }
+        $g = $info.Inner.SelectSingleNode('mxGeometry')
+        $shapes[$info.Id] = @{
+            Parent = $info.Parent; Label = ([string]$info.Label -split "`n")[0]; Style = $info.Style
+            X = [double]::Parse($g.GetAttribute('x'), $inv); Y = [double]::Parse($g.GetAttribute('y'), $inv)
+            W = [double]::Parse($g.GetAttribute('width'), $inv); H = [double]::Parse($g.GetAttribute('height'), $inv)
+        }
+    }
+    $byParent = @{}
+    foreach ($s in $shapes.Values) {
+        if (-not $byParent.ContainsKey($s.Parent)) { $byParent[$s.Parent] = New-Object System.Collections.Generic.List[object] }
+        $byParent[$s.Parent].Add($s)
+        if ($shapes.ContainsKey($s.Parent)) {
+            $p = $shapes[$s.Parent]
+            $header = Get-StyleNumber $p.Style 'startSize' 0
+            if ($s.X -lt -0.01 -or $s.Y -lt $header - 0.01 -or $s.X + $s.W -gt $p.W + 0.01 -or $s.Y + $s.H -gt $p.H + 0.01) {
+                $problems.Add("`"$($s.Label)`" is not inside `"$($p.Label)`"")
+            }
+        }
+    }
+    foreach ($list in $byParent.Values) {
+        for ($i = 0; $i -lt $list.Count; $i++) {
+            for ($j = $i + 1; $j -lt $list.Count; $j++) {
+                $a = $list[$i]; $b = $list[$j]
+                if ($a.X -lt $b.X + $b.W - 0.01 -and $b.X -lt $a.X + $a.W - 0.01 -and $a.Y -lt $b.Y + $b.H - 0.01 -and $b.Y -lt $a.Y + $a.H - 0.01) {
+                    $problems.Add("`"$($a.Label)`" and `"$($b.Label)`" overlap")
+                }
+            }
+        }
+    }
+    foreach ($c in $Diagram.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]')) {
+        $s = $shapes[$c.GetAttribute('source')]
+        $t = $shapes[$c.GetAttribute('target')]
+        $name = '"' + $s.Label + '" to "' + $t.Label + '"'
+        if ($s.Parent -ne $c.GetAttribute('parent') -or $t.Parent -ne $c.GetAttribute('parent')) { $problems.Add("arrow $name leaves its container") }
+        if ($t.Y -lt $s.Y + $s.H) { $problems.Add("arrow $name does not run downwards") }
+        if ([Math]::Abs(($s.X + $s.W / 2) - ($t.X + $t.W / 2)) -gt 0.5) { $problems.Add("arrow $name is not straight") }
+    }
+    return , $problems
+}
+
 function Assert-CleanArrows {
     # Runs Get-ArrowProblems on every page of a file, or only the pages named.
     param([string]$File, [string]$What, [string[]]$Pages)
@@ -440,7 +491,16 @@ try {
     Assert ($mapEdges -eq 7) "map draws one arrow per caller and callee pair (found $mapEdges)"
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
     Assert ($report -match 'WarmUpCache \(Acme\.Robotics\.Activities\) - 1, in Framework\\Initialize\.xaml') 'report lists the activity from another package'
-    Assert ($report -match 'ProcessOrders\.xaml \(sequence\): 5 activities not drawn') 'report says how many activities a summary page does not draw'
+    Assert ($report -match 'ProcessOrders\.xaml \(sequence\): 3 activities not drawn; they are inside the activity drawn as a dashed box') 'report says how many activities a sequence page leaves inside boxes not expanded'
+    Assert ($report -match 'ProcessOrders\.xaml - sequence: 2 steps drawn top to bottom; 1 activity holding others not expanded \(ForEach\)\. Activities drawn: 2 of 5\.') 'report describes the sequence page and counts what it draws'
+    $tryProject = Join-Path $work 'try-top'
+    [void](New-Item -ItemType Directory -Path $tryProject)
+    [System.IO.File]::WriteAllText((Join-Path $tryProject 'Guarded.xaml'), ('<Activity x:Class="Guarded" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:ui="http://schemas.uipath.com/workflow/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">' +
+        '<TryCatch DisplayName="Guard"><TryCatch.Try><Sequence DisplayName="Work"><ui:InvokeWorkflowFile DisplayName="Do it" WorkflowFileName="DoIt.xaml" /></Sequence></TryCatch.Try></TryCatch></Activity>'), (New-Object System.Text.UTF8Encoding($false)))
+    $r2 = Invoke-Converter @{ Path = (Join-Path $tryProject 'Guarded.xaml'); OutputPath = (Join-Path $work 'try-top-out') }
+    $report2 = [System.IO.File]::ReadAllText($r2.ReportFile)
+    Assert ($report2 -match 'Guarded\.xaml - trycatch: summary page only \(1 invoked workflow listed\)\. Activities drawn: 0 of 2\.') 'a top-level Try Catch still gets a summary page, and the report says nothing in it is drawn'
+    Assert ($report2 -match 'Guarded\.xaml \(trycatch\): 2 activities not drawn; the page lists the workflows it invokes') 'report says how many activities a summary page does not draw'
     Assert ($report -match '(?m)^Version:  \d+\.\d+\.\d+\r?$') 'report says which version of the converter wrote it'
     Assert ($report -notmatch '(?m)^  Main\.xaml \(flowchart\):') 'a flowchart that draws all its activities gets no not-drawn line'
     Assert ($report -match 'Steps\\CheckOrder.xaml - invoked from ProcessOrders.xaml') 'report lists the missing workflow'
@@ -676,7 +736,7 @@ try {
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
     Assert ($report -match 'Files that could not be read \(1\)') 'report lists the unreadable file'
     Assert ($report -match 'Broken\.xaml: not well-formed XML \(line \d+, position \d+\)') 'says where the file is broken'
-    Assert ($report -notmatch 'Sequence|SecretMarker') 'does not quote the broken file''s content'
+    Assert ($report -cnotmatch 'Sequence|SecretMarker') 'does not quote the broken file''s content'
 
     # The report gets shared, so it names files but never gives full paths (they name the user and folders).
     $everyReport = @(Get-ChildItem -LiteralPath $work -Recurse -Filter '*.conversion-report.txt')
@@ -762,6 +822,62 @@ try {
     $r = Invoke-Converter @{ Path = $odd; OutputPath = (Join-Path $work 'odd-name-out') }
     $d = Test-DrawioStructure $r.DrawioFiles[0]
     Assert ((Split-Path -Leaf $r.DrawioFiles[0]).Length -le 90) 'keeps output file names short, however long the project name'
+
+    # --- Sequences ----------------------------------------------------------------------------------
+    Write-Host "`nSequences"
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'sequences.xaml'); OutputPath = (Join-Path $work 'seq') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $page = $d.Doc.SelectNodes('/mxfile/diagram')[0]
+    $frameProblems = Get-FrameProblems $page
+    Assert ($frameProblems.Count -eq 0) ('sequence page: every shape inside its frame, none overlapping, arrows straight down' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
+    $report = [System.IO.File]::ReadAllText($r.ReportFile)
+    Assert ($report -match 'sequences\.xaml - sequence: ') 'a top-level sequence gets a sequence page, not a summary'
+    Assert ($report -match 'Activities drawn: 18 of 31\.') 'report counts the activities drawn (18 of 31)'
+    Assert ($report -match 'sequences\.xaml \(sequence\): 13 activities not drawn') 'report says how many activities are inside boxes not expanded (13)'
+    $cells = @{}
+    $byId = @{}
+    foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) {
+        $info = Get-CellInfo $c
+        if ($info.Id -eq '0' -or $info.Id -eq '1') { continue }
+        $byId[$info.Id] = $info
+        if ($info.Vertex) { $cells[([string]$info.Label -split "`n")[0]] = $info }
+    }
+    function Get-InsideOrder($FrameLabel) {
+        # The first label line of each shape directly inside a frame, top to bottom.
+        $frameId = $cells[$FrameLabel].Id
+        return @($byId.Values | Where-Object { $_.Vertex -and $_.Parent -eq $frameId } |
+            Sort-Object { [double]::Parse($_.Inner.SelectSingleNode('mxGeometry').GetAttribute('y'), [System.Globalization.CultureInfo]::InvariantCulture) } |
+            ForEach-Object { ([string]$_.Label -split "`n")[0] })
+    }
+    $order = Get-InsideOrder 'Handle a request'
+    $expectedOrder = @('Set the start time', 'Log the start', 'Prepare', 'Is it urgent?', 'Try to send', 'Old step', 'Send to the queue', 'Run as a batch', 'Level 2', 'Delay')
+    Assert (($order -join '|') -eq ($expectedOrder -join '|')) "activities are drawn in the order written (found: $($order -join ', '))"
+    Assert (((Get-InsideOrder 'Prepare') -join '|') -eq 'Load the settings|Empty part') 'a nested sequence is a frame holding its own activities in order'
+    $arrows = @($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]'))
+    Assert ($arrows.Count -eq 10) "one arrow from each activity to the next in each frame (found $($arrows.Count), expected 10)"
+    Assert ($cells['Load the settings'].Label -match 'Setup\\LoadSettings\.xaml \(missing\)' -and $cells['Load the settings'].Style -match 'dashed=1') 'an invoke step names its workflow and marks it missing'
+    Assert ($cells['Empty part'].Label -match '\(empty sequence\)') 'an empty sequence is drawn and says it is empty'
+    $rowsOf = {
+        param($Label)
+        $id = $cells[$Label].Id
+        @($byId.Values | Where-Object { $_.Parent -eq $id -and $_.Vertex } | ForEach-Object { [string]$_.Label })
+    }
+    $ifRows = & $rowsOf 'Is it urgent?'
+    Assert ($cells['Is it urgent?'].Style -match 'dashed=1' -and $ifRows -contains '[If] 4 activities inside, not drawn in version 1') 'an If is one dashed box saying how many activities it holds'
+    Assert ($ifRows -contains 'Escalate.xaml (missing)') 'a workflow invoked inside an If is listed on its box'
+    Assert ((& $rowsOf 'Try to send') -contains '[TryCatch] 2 activities inside, not drawn in version 1') 'a Try Catch is one dashed box, not expanded'
+    $oldRows = & $rowsOf 'Old step'
+    Assert ($oldRows -contains '3 activities commented out (not run)') 'a Comment Out says its activities do not run'
+    Assert ($oldRows -contains 'OldCleanup.xaml (missing) (commented out)') 'a workflow invoked inside a Comment Out is listed as commented out'
+    Assert ($cells['Send to the queue'].Label -eq "Send to the queue`n[RouteToQueue]" -and $cells['Send to the queue'].Style -match 'dashed=1') 'an activity from another package is a dashed box showing its type'
+    Assert ((& $rowsOf 'Run as a batch') -contains '[BatchScope] from another package: 2 activities inside, not drawn') 'a container from another package is not expanded, and says where it comes from'
+    $frames = @($byId.Values | Where-Object { $_.Vertex -and $_.Style -match '^swimlane;rounded=0;startSize=26;' }).Count
+    Assert ($frames -eq 9) "sequences up to the depth limit are frames (found $frames, expected 9: the top level, Prepare and Levels 2 to 8)"
+    Assert ((& $rowsOf 'Level 9') -contains 'Nested too deep to draw: 2 activities inside') 'a sequence past the depth limit is collapsed and says how much it holds'
+    Assert ($cells.ContainsKey('Delay') -and -not $cells.ContainsKey('Deepest step')) 'an activity with no display name is still drawn; activities inside collapsed boxes are not'
+    Assert ($d.Text -notmatch '\[urgent\]') 'leaves the If condition out by default'
+    $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'sequences.xaml'); OutputPath = (Join-Path $work 'seq-again') }
+    Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a sequence page comes out the same every time'
 
     # --- Regression baseline: state machine, flowchart and project map pages, byte for byte --------
     Write-Host "`nRegression baseline"

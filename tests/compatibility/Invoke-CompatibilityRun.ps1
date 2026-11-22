@@ -52,7 +52,7 @@ foreach ($d in @($sources, $outputs)) { [void](New-Item -ItemType Directory -For
 # Reuse the diagram checks from the test script, without running its tests.
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($testScript, [ref]$null, [ref]$null)
 foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
-    if (@('Get-StyleNumber', 'Get-ArrowProblems', 'Get-CellInfo', 'Get-Label', 'Read-Drawio', 'Get-PageHashes') -contains $f.Name) {
+    if (@('Get-StyleNumber', 'Get-ArrowProblems', 'Get-CellInfo', 'Get-Label', 'Read-Drawio', 'Get-PageHashes', 'Get-FrameProblems') -contains $f.Name) {
         . ([scriptblock]::Create($f.Extent.Text))
     }
 }
@@ -137,7 +137,7 @@ foreach ($p in $rows) {
         Id = $id; Repository = $p.Repository; ProjectPath = $p.ProjectPath; Commit = $p.Commit
         StudioVersion = $p.StudioVersion; TargetFramework = $p.TargetFramework; ExpressionLanguage = $p.ExpressionLanguage; OutputType = $p.OutputType
         Fetched = $false; Complete = $false; MissingFromDownload = 0; XamlFiles = 0; Exit7 = ''; Exit51 = ''; Seconds7 = ''; Seconds51 = ''; Error = ''
-        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; StudioLayout = 0; AutoLayout = 0
+        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; SequencePages = 0; ActivitiesTotal = 0; ActivitiesDrawn = 0; FullyDrawn = 0; StudioLayout = 0; AutoLayout = 0
         Missing = 0; Outside = 0; RunTime = 0; UnrecognisedTypes = ''; Warnings = 0; Unreadable = 0; NotWorkflows = 0; SkippedFolders = 0
         CheckProblems = 0; CheckDetails = ''
     }
@@ -195,6 +195,15 @@ foreach ($p in $rows) {
         $row.StateMachines = @($workflows | Where-Object { $_ -match ' - state machine:' }).Count
         $row.Flowcharts = @($workflows | Where-Object { $_ -match ' - flowchart:' }).Count
         $row.SummaryOnly = @($workflows | Where-Object { $_ -match 'summary page only' }).Count
+        $row.SequencePages = @($workflows | Where-Object { $_ -match ' - sequence: ' }).Count
+        # Each workflow line ends "Activities drawn: N of M." (activities below the top-level one).
+        foreach ($w in $workflows) {
+            $m = [regex]::Match($w, 'Activities drawn: (\d+) of (\d+)\.')
+            if (-not $m.Success) { continue }
+            $row.ActivitiesDrawn += [int]$m.Groups[1].Value
+            $row.ActivitiesTotal += [int]$m.Groups[2].Value
+            if ($m.Groups[1].Value -eq $m.Groups[2].Value -and $w -notmatch 'summary page only') { $row.FullyDrawn++ }
+        }
         $row.StudioLayout = @($workflows | Where-Object { $_ -match 'layout saved in Studio' }).Count
         $row.AutoLayout = @($workflows | Where-Object { $_ -match 'laid out automatically' }).Count
         $row.Missing = @(Get-Section $report 'Invoked workflows not found').Count
@@ -233,6 +242,10 @@ foreach ($p in $rows) {
                 if ($name -eq 'Project map' -or $report -match ('(?m)^  ' + [regex]::Escape($name) + '( \[main\])? - .*laid out automatically')) {
                     foreach ($pr in (Get-ArrowProblems $dg)) { $problems.Add("$name`: $pr") }
                 }
+                # Sequence pages: shapes inside their frames, none overlapping, arrows straight down.
+                if ($report -match ('(?m)^  ' + [regex]::Escape($name) + '( \[main\])? - sequence: ')) {
+                    foreach ($pr in (Get-FrameProblems $dg)) { $problems.Add("$name`: $pr") }
+                }
             }
         }
         catch { $problems.Add('not well-formed: ' + $_.Exception.Message) }
@@ -259,6 +272,8 @@ $lines = @(
     "Failures: $(@($results | Where-Object { $_.Complete -and -not ($_.Exit7 -eq 0 -and $_.Exit51 -eq 0) }).Count)"
     "Identical output in 5.1 and 7: $(@($results | Where-Object { $_.SameIn51And7 -eq $true }).Count)"
     "Workflows: $(& $sum 'Workflows'); state machines drawn: $(& $sum 'StateMachines'); flowcharts drawn: $(& $sum 'Flowcharts'); summary only: $(& $sum 'SummaryOnly')"
+    "Sequence pages (steps drawn top to bottom): $(& $sum 'SequencePages')"
+    "Activities drawn: $(& $sum 'ActivitiesDrawn') of $(& $sum 'ActivitiesTotal') ($(if ((& $sum 'ActivitiesTotal') -gt 0) { [Math]::Round(100.0 * (& $sum 'ActivitiesDrawn') / (& $sum 'ActivitiesTotal'), 1) } else { 0 })%); workflows with every activity drawn: $(& $sum 'FullyDrawn')"
     "Studio layout used: $(& $sum 'StudioLayout'); automatic layout: $(& $sum 'AutoLayout')"
     "Invoked files missing: $(& $sum 'Missing'); outside the project: $(& $sum 'Outside'); set at run time: $(& $sum 'RunTime')"
     "Unreadable files: $(& $sum 'Unreadable'); not workflows: $(& $sum 'NotWorkflows'); folders skipped: $(& $sum 'SkippedFolders'); warnings: $(& $sum 'Warnings')"

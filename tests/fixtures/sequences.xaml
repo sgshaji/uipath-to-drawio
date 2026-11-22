@@ -1,0 +1,87 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Sequences"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:demo="clr-namespace:Demo.Activities;assembly=Demo.Activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input: a top-level sequence holding one of everything a sequence page has to handle.
+       In order:
+         1-2  single activities (Workflow Foundation, UiPath)
+         3    a nested sequence holding an invoke and an empty sequence
+         4    an If with an invoke inside: not expanded; the invoke is listed on its box
+         5    a Try Catch: not expanded
+         6    a Comment Out holding an invoke: its activities do not run, and the box must say so
+         7    an activity from a made-up package: shown with its type
+         8    a container from a made-up package: not expanded, nothing guessed about what it does
+         9    sequences nested ten deep: those past the depth limit are collapsed into one box
+         10   an activity with no display name and no layout ID: still drawn, under its type
+       31 activities below the top-level sequence are counted (the Delay has neither a display name
+       nor a layout ID, so it is drawn but not counted); 18 are drawn and 13 are inside collapsed boxes. -->
+  <Sequence DisplayName="Handle a request" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Name="request" />
+    </Sequence.Variables>
+    <Assign DisplayName="Set the start time" sap2010:WorkflowViewState.IdRef="Assign_1" />
+    <ui:LogMessage DisplayName="Log the start" sap2010:WorkflowViewState.IdRef="LogMessage_1" />
+    <Sequence DisplayName="Prepare" sap2010:WorkflowViewState.IdRef="Sequence_2">
+      <ui:InvokeWorkflowFile DisplayName="Load the settings" WorkflowFileName="Setup\LoadSettings.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_1" />
+      <Sequence DisplayName="Empty part" sap2010:WorkflowViewState.IdRef="Sequence_3" />
+    </Sequence>
+    <If DisplayName="Is it urgent?" Condition="[urgent]" sap2010:WorkflowViewState.IdRef="If_1">
+      <If.Then>
+        <Sequence DisplayName="Escalation" sap2010:WorkflowViewState.IdRef="Sequence_4">
+          <ui:InvokeWorkflowFile DisplayName="Escalate" WorkflowFileName="Escalate.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_2" />
+          <Assign DisplayName="Mark as escalated" sap2010:WorkflowViewState.IdRef="Assign_2" />
+        </Sequence>
+      </If.Then>
+      <If.Else>
+        <Assign DisplayName="Mark as routine" sap2010:WorkflowViewState.IdRef="Assign_3" />
+      </If.Else>
+    </If>
+    <TryCatch DisplayName="Try to send" sap2010:WorkflowViewState.IdRef="TryCatch_1">
+      <TryCatch.Try>
+        <Sequence DisplayName="Send" sap2010:WorkflowViewState.IdRef="Sequence_5">
+          <Assign DisplayName="Send the reply" sap2010:WorkflowViewState.IdRef="Assign_4" />
+        </Sequence>
+      </TryCatch.Try>
+    </TryCatch>
+    <ui:CommentOut DisplayName="Old step" sap2010:WorkflowViewState.IdRef="CommentOut_1">
+      <ui:CommentOut.Body>
+        <Sequence DisplayName="Ignored Activities" sap2010:WorkflowViewState.IdRef="Sequence_6">
+          <ui:InvokeWorkflowFile DisplayName="Old clean-up" WorkflowFileName="OldCleanup.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_3" />
+          <Assign DisplayName="Old assignment" sap2010:WorkflowViewState.IdRef="Assign_5" />
+        </Sequence>
+      </ui:CommentOut.Body>
+    </ui:CommentOut>
+    <demo:RouteToQueue DisplayName="Send to the queue" sap2010:WorkflowViewState.IdRef="RouteToQueue_1" />
+    <demo:BatchScope DisplayName="Run as a batch" sap2010:WorkflowViewState.IdRef="BatchScope_1">
+      <demo:BatchScope.Body>
+        <Sequence DisplayName="Batch body" sap2010:WorkflowViewState.IdRef="Sequence_7">
+          <Assign DisplayName="Count the batch" sap2010:WorkflowViewState.IdRef="Assign_6" />
+        </Sequence>
+      </demo:BatchScope.Body>
+    </demo:BatchScope>
+    <Sequence DisplayName="Level 2" sap2010:WorkflowViewState.IdRef="Sequence_12">
+      <Sequence DisplayName="Level 3" sap2010:WorkflowViewState.IdRef="Sequence_13">
+        <Sequence DisplayName="Level 4" sap2010:WorkflowViewState.IdRef="Sequence_14">
+          <Sequence DisplayName="Level 5" sap2010:WorkflowViewState.IdRef="Sequence_15">
+            <Sequence DisplayName="Level 6" sap2010:WorkflowViewState.IdRef="Sequence_16">
+              <Sequence DisplayName="Level 7" sap2010:WorkflowViewState.IdRef="Sequence_17">
+                <Sequence DisplayName="Level 8" sap2010:WorkflowViewState.IdRef="Sequence_18">
+                  <Sequence DisplayName="Level 9" sap2010:WorkflowViewState.IdRef="Sequence_19">
+                    <Sequence DisplayName="Level 10" sap2010:WorkflowViewState.IdRef="Sequence_20">
+                      <Assign DisplayName="Deepest step" sap2010:WorkflowViewState.IdRef="Assign_7" />
+                    </Sequence>
+                  </Sequence>
+                </Sequence>
+              </Sequence>
+            </Sequence>
+          </Sequence>
+        </Sequence>
+      </Sequence>
+    </Sequence>
+    <Delay Duration="00:00:01" />
+  </Sequence>
+</Activity>

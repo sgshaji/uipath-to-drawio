@@ -122,6 +122,8 @@ $script:Style = @{
     FinalStateCard = 'swimlane;rounded=1;arcSize=12;startSize=28;fontStyle=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;swimlaneFillColor=#ffffff;collapsible=0;'
     Step           = 'rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;'
     StepCard       = 'swimlane;rounded=1;startSize=28;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;swimlaneFillColor=#ffffff;collapsible=0;'
+    CollapsedCard  = 'swimlane;rounded=1;startSize=28;fontStyle=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;swimlaneFillColor=#ffffff;collapsible=0;'
+    SequenceFrame  = 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#eef3f8;strokeColor=#7a96b5;swimlaneFillColor=#fbfcfd;collapsible=0;'
     Invoke         = 'shape=process;size=0.04;fillColor=#e1d5e7;strokeColor=#9673a6;'
     InvokeMissing  = 'shape=process;size=0.04;dashed=1;fillColor=#ffffff;strokeColor=#b85450;fontColor=#b85450;'
     InvokeComputed = 'shape=process;size=0.04;dashed=1;fillColor=#ffffff;strokeColor=#999999;fontColor=#666666;'
@@ -154,6 +156,8 @@ $script:RoleStyle = @{
     'invokeMissing'   = $script:Style.InvokeMissing
     'invokeComputed'  = $script:Style.InvokeComputed
     'otherActivity'   = $script:Style.Unknown
+    'collapsed|Card'  = $script:Style.CollapsedCard
+    'sequence|Frame'  = $script:Style.SequenceFrame
     'decision'        = $script:Style.Decision
     'switch'          = $script:Style.Switch
     'workflow'        = $script:Style.Workflow
@@ -594,6 +598,7 @@ function Read-Workflow {
         Activities    = @{}         # "source|type" -> source, type, package and how often it is used
         ActivityCount = 0           # activities below the top-level one
         NotDrawn      = 0           # how many of those the diagram does not show
+        Collapsed     = 0           # sequence pages: activities holding others, drawn as one box each
         Summary       = ''
         IsMain        = $false
         TopElement    = ''          # for a file that is not a workflow: what its top element is
@@ -638,6 +643,10 @@ function Read-Workflow {
             'StateMachine' { $wf.Kind = 'StateMachine'; $wf.KindLabel = 'state machine' }
             'Flowchart' { $wf.Kind = 'Flowchart'; $wf.KindLabel = 'flowchart' }
             default { $wf.Kind = 'Other'; $wf.KindLabel = $wf.Root.get_LocalName().ToLowerInvariant() }
+        }
+        if ($wf.Kind -eq 'Other' -and $wf.Root.get_LocalName() -eq 'Sequence' -and (Get-ActivitySource $wf.Root.get_NamespaceURI()) -eq 'WorkflowFoundation') {
+            $wf.Kind = 'Sequence'
+            $wf.KindLabel = 'sequence'
         }
     }
 
@@ -1081,6 +1090,191 @@ function Get-FlowchartGraph {
     }
     $summary = (Format-Count $steps 'step' 'steps') + ', ' + (Format-Count $decisions 'decision' 'decisions') + ', ' + (Format-Count $switches 'switch' 'switches')
     return @{ Nodes = $nodes; Edges = $edges; StartKeys = @('start'); Warnings = $warnings; Summary = $summary; DrawnActivities = $drawn }
+}
+
+# ---------------------------------------------------------------------------
+# Sequences
+# ---------------------------------------------------------------------------
+# A sequence runs its activities one after another, in the order written. The page draws it as a frame
+# with its activities stacked top to bottom and joined by arrows. A sequence inside it is a frame of
+# its own. Version 1 expands nothing else: any other activity that holds activities (If, Try Catch,
+# loops, scopes, and containers from other packages) is drawn as one dashed box saying what it is and
+# how many activities it holds, and listing the workflows invoked inside it. Nothing is guessed about
+# what such an activity does with its contents.
+
+$script:MaxSequenceDepth = 8     # sequences nested deeper than this are collapsed, not drawn
+$script:FrameHeader = 26
+$script:SequencePad = 20
+$script:SequenceGap = 30
+
+function Get-ActivityChildren {
+    # Every child element that is an activity: not a property element (Name.Property), not markup.
+    param($Element)
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($c in (Get-ChildElement $Element)) {
+        if ($c.get_LocalName().Contains('.')) { continue }
+        if ($script:NonActivityNs -contains $c.get_NamespaceURI()) { continue }
+        $list.Add($c)
+    }
+    return , $list
+}
+
+function Get-InsideCount {
+    # How many activities an element holds, not counting itself.
+    param($Element)
+    $count = 0
+    foreach ($d in $Element.SelectNodes('.//*')) { if (Test-CountsAsActivity $d) { $count++ } }
+    return $count
+}
+
+function Get-SequenceItem {
+    # What the sequence page draws for one activity: a frame (a sequence, with its activities), a box
+    # (one activity, or an invoked workflow), or a dashed card (an activity holding others, not expanded).
+    param($Element, [int]$Depth, $Context, $InvokeByElement)
+    $type = $Element.get_LocalName()
+    $source = Get-ActivitySource $Element.get_NamespaceURI()
+    $item = @{
+        Element = $Element; Type = $type; Source = $source; Label = (Get-StepLabel $Element)
+        Shape = 'Box'; Role = 'step'; Link = $null; Children = $null; Rows = $null
+        Inside = 0; Reason = ''; Counts = (Test-CountsAsActivity $Element)
+        X = 0.0; Y = 0.0; W = 0.0; H = 0.0
+    }
+    $isSequence = ($type -eq 'Sequence' -and $source -eq 'WorkflowFoundation')
+    if ($isSequence -and $Depth -le $script:MaxSequenceDepth) {
+        $children = Get-ActivityChildren $Element
+        if ($children.Count -eq 0) {
+            $item.Label = $item.Label + "`n(empty sequence)"
+            return $item
+        }
+        $item.Shape = 'Frame'
+        $item.Role = 'sequence'
+        $item.Children = New-Object System.Collections.Generic.List[object]
+        foreach ($c in $children) { $item.Children.Add((Get-SequenceItem $c ($Depth + 1) $Context $InvokeByElement)) }
+        return $item
+    }
+    if ($type -eq 'InvokeWorkflowFile' -and $source -eq 'UiPath') {
+        $inv = $null
+        if ($InvokeByElement.TryGetValue($Element, [ref]$inv)) {
+            $row = New-InvokeRow $inv $Context ''
+            $item.Label = $item.Label + "`n" + $row.Text
+            $item.Role = Get-InvokeRole $row
+            $item.Link = $row.Link
+            return $item
+        }
+    }
+    $inside = Get-InsideCount $Element
+    if ($inside -gt 0 -or $isSequence) {
+        $item.Shape = 'Card'
+        $item.Role = 'collapsed'
+        $item.Inside = $inside
+        $activities = Format-Count $inside 'activity' 'activities'
+        $suffix = ''
+        if ($isSequence) {
+            $item.Reason = 'depth'
+            $text = 'Nested too deep to draw: ' + $activities + ' inside'
+        }
+        elseif ($type -eq 'CommentOut' -and $source -eq 'UiPath') {
+            $item.Reason = 'commented out'
+            $text = $activities + ' commented out (not run)'
+            $suffix = ' (commented out)'
+        }
+        elseif ($source -eq 'Other') {
+            $item.Reason = 'other package'
+            $text = '[' + $type + '] from another package: ' + $activities + ' inside, not drawn'
+        }
+        else {
+            $item.Reason = 'not expanded'
+            $text = '[' + $type + '] ' + $activities + ' inside, not drawn in version 1'
+        }
+        $item.Rows = New-Object System.Collections.Generic.List[object]
+        $item.Rows.Add((New-Row $text 'plain' $null))
+        foreach ($el in $Element.SelectNodes(".//*[local-name()='InvokeWorkflowFile']")) {
+            $inv = $null
+            if (-not $InvokeByElement.TryGetValue($el, [ref]$inv)) { continue }
+            $row = New-InvokeRow $inv $Context $suffix
+            $seen = $false
+            foreach ($r in $item.Rows) { if ($r.Text -eq $row.Text) { $seen = $true } }
+            if (-not $seen) { $item.Rows.Add($row) }
+        }
+        return $item
+    }
+    if ($source -eq 'Other') {
+        $item.Role = 'otherActivity'
+        $item.Label = $item.Label + "`n[" + $type + ']'
+    }
+    return $item
+}
+
+function Set-SequenceLayout {
+    # Sizes every item and places each frame's items centred, top to bottom, relative to the frame.
+    param($Item)
+    if ($Item.Shape -ne 'Frame') {
+        $rows = @()
+        if ($null -ne $Item.Rows) { $rows = $Item.Rows }
+        $kind = 'Box'
+        if ($Item.Shape -eq 'Card') { $kind = 'Card' }
+        $size = Measure-Node @{ Kind = $kind; Label = $Item.Label; Rows = $rows } $false
+        $Item.W = $size.W
+        $Item.H = $size.H
+        return
+    }
+    $widest = 0.0
+    $height = 0.0
+    foreach ($c in $Item.Children) {
+        Set-SequenceLayout $c
+        if ($c.W -gt $widest) { $widest = $c.W }
+        $height += $c.H
+    }
+    $height += $script:SequenceGap * ($Item.Children.Count - 1)
+    $Item.W = [Math]::Max([Math]::Max($widest + 2 * $script:SequencePad, (Get-TextSize $Item.Label 7.5 16).W + 40), 160)
+    $Item.H = $script:FrameHeader + 2 * $script:SequencePad + $height
+    $y = $script:FrameHeader + $script:SequencePad
+    foreach ($c in $Item.Children) {
+        $c.X = ($Item.W - $c.W) / 2
+        $c.Y = $y
+        $y += $c.H + $script:SequenceGap
+    }
+}
+
+function Add-SequenceItem {
+    # Writes an item, and for a frame everything inside it, as cells nested in their containers, so
+    # moving a frame in draw.io moves its contents. Arrows join each activity to the next.
+    param($Page, $Item, [string]$ParentId)
+    $id = Add-Vertex $Page $Item.Label (Get-NodeStyle @{ Role = $Item.Role; Kind = $Item.Shape; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId $Item.Link
+    if ($Item.Shape -eq 'Card') {
+        $y = $script:CardHeader + $script:RowGap
+        foreach ($r in $Item.Rows) {
+            [void](Add-Vertex $Page $r.Text (Get-RowStyle $r) 8 $y ($Item.W - 16) $script:RowHeight $id $r.Link)
+            $y += $script:RowHeight + $script:RowGap
+        }
+    }
+    if ($Item.Shape -eq 'Frame') {
+        $ids = New-Object System.Collections.Generic.List[string]
+        foreach ($c in $Item.Children) { $ids.Add((Add-SequenceItem $Page $c $id)) }
+        $style = $script:Style.Edge + 'edgeStyle=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;'
+        for ($i = 1; $i -lt $ids.Count; $i++) { [void](Add-EdgeCell $Page '' $style $ids[$i - 1] $ids[$i] $null $null 0 $id) }
+    }
+    return $id
+}
+
+function Get-SequenceStats {
+    # Counts for the report, over every item below the top-level sequence.
+    param($Item, $Stats)
+    foreach ($c in $Item.Children) {
+        if ($c.Counts) { $Stats.Drawn++ }
+        switch ($c.Shape) {
+            'Frame' { $Stats.Sequences++; Get-SequenceStats $c $Stats }
+            'Card' {
+                $Stats.Collapsed++
+                $Stats.Inside += $c.Inside
+                $label = $c.Type
+                if ($c.Reason -eq 'commented out') { $label = 'commented out' }
+                if ($c.Reason -eq 'depth') { $label = 'nested too deep' }
+                $Stats.Kinds[$label] = 1 + [int]$Stats.Kinds[$label]
+            }
+            default { $Stats.Boxes++ }
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -1776,9 +1970,9 @@ function Add-Vertex {
 }
 
 function Add-EdgeCell {
-    param($Page, [string]$Label, [string]$Style, [string]$Source, [string]$Target, $Points, $LabelX = $null, [double]$LabelDx = 0)
+    param($Page, [string]$Label, [string]$Style, [string]$Source, [string]$Target, $Points, $LabelX = $null, [double]$LabelDx = 0, [string]$Parent = '1')
     $id = New-CellId $Page
-    $Page.Cells.Add(@{ Id = $id; Edge = $true; Label = $Label; Style = $Style; Parent = '1'; X = 0; Y = 0; W = 0; H = 0; Link = $null; Source = $Source; Target = $Target; Points = $Points; LabelX = $LabelX; LabelDx = $LabelDx })
+    $Page.Cells.Add(@{ Id = $id; Edge = $true; Label = $Label; Style = $Style; Parent = $Parent; X = 0; Y = 0; W = 0; H = 0; Link = $null; Source = $Source; Target = $Target; Points = $Points; LabelX = $LabelX; LabelDx = $LabelDx })
     return $id
 }
 
@@ -1952,7 +2146,29 @@ function New-WorkflowPage {
         return $page
     }
 
-    # Sequences and anything else: a summary card listing the workflows the file invokes.
+    if ($Workflow.Kind -eq 'Sequence') {
+        $invokeByElement = New-Object 'System.Collections.Generic.Dictionary[object,object]'
+        foreach ($inv in $Workflow.Invokes) { $invokeByElement[$inv.Element] = $inv }
+        $root = Get-SequenceItem $Workflow.Root 1 $Context $invokeByElement
+        Set-SequenceLayout $root
+        $root.X = $left
+        $root.Y = $top
+        [void](Add-SequenceItem $page $root '1')
+        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{} }
+        if ($root.Shape -eq 'Frame') { Get-SequenceStats $root $stats }
+        $Workflow.NotDrawn = [Math]::Max(0, $Workflow.ActivityCount - $stats.Drawn)
+        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences) 'step' 'steps') + ' drawn top to bottom'
+        if ($stats.Sequences -gt 0) { $text += ', including ' + (Format-Count $stats.Sequences 'nested sequence' 'nested sequences') }
+        if ($stats.Collapsed -gt 0) {
+            $kinds = @($stats.Kinds.Keys | Sort-Object | ForEach-Object { if ($stats.Kinds[$_] -gt 1) { $_ + ' x' + $stats.Kinds[$_] } else { $_ } })
+            $text += '; ' + (Format-Count $stats.Collapsed 'activity' 'activities') + ' holding others not expanded (' + ($kinds -join ', ') + ')'
+        }
+        $Workflow.Summary = $text + '.'
+        $Workflow.Collapsed = $stats.Collapsed
+        return $page
+    }
+
+    # Anything else: a summary card listing the workflows the file invokes.
     $rootLabel = 'Empty workflow'
     if ($null -ne $Workflow.Root) { $rootLabel = Get-DisplayName $Workflow.Root $Workflow.Root.get_LocalName() }
     $node = New-Node 'root' 'Card' $rootLabel 'step' $Workflow.Root
@@ -2087,7 +2303,11 @@ function Get-ReportText {
     foreach ($wf in $Workflows) {
         $mark = ''
         if ($wf.IsMain) { $mark = ' [main]' }
-        [void]$sb.Append('  ' + $wf.Rel + $mark + ' - ' + $wf.Summary + $nl)
+        $drawnText = ''
+        if (-not $wf.Error -and $wf.Kind -ne 'NotWorkflow' -and $wf.Kind -ne 'Empty') {
+            $drawnText = ' Activities drawn: ' + ($wf.ActivityCount - $wf.NotDrawn) + ' of ' + $wf.ActivityCount + '.'
+        }
+        [void]$sb.Append('  ' + $wf.Rel + $mark + ' - ' + $wf.Summary + $drawnText + $nl)
     }
 
     $missing = New-Object System.Collections.Generic.List[string]
@@ -2123,6 +2343,11 @@ function Get-ReportText {
         $activities = Format-Count $wf.NotDrawn 'activity' 'activities'
         if ($wf.Kind -eq 'Other') { $notDrawn.Add('  ' + $wf.Rel + ' (' + $wf.KindLabel + '): ' + $activities + ' not drawn; the page lists the workflows it invokes.') }
         if ($wf.Kind -eq 'StateMachine' -and $wf.NotDrawn -gt 0) { $notDrawn.Add('  ' + $wf.Rel + ' (state machine): ' + $activities + ' inside states not drawn; each state lists the workflows it invokes.') }
+        if ($wf.Kind -eq 'Sequence' -and $wf.NotDrawn -gt 0) {
+            $where = 'the ' + $wf.Collapsed + ' activities drawn as dashed boxes, which list the workflows invoked inside them.'
+            if ($wf.Collapsed -eq 1) { $where = 'the activity drawn as a dashed box, which lists the workflows invoked inside it.' }
+            $notDrawn.Add('  ' + $wf.Rel + ' (sequence): ' + $activities + ' not drawn; they are inside ' + $where)
+        }
         if ($wf.Kind -eq 'Flowchart' -and $wf.NotDrawn -gt 0) { $notDrawn.Add('  ' + $wf.Rel + ' (flowchart): ' + $activities + ' inside steps not drawn; a step holding a sequence lists the workflows it invokes.') }
     }
 
@@ -2151,8 +2376,8 @@ function Get-ReportText {
         if ($source -eq 'Other') {
             # Listed one by one: these come from the project's own libraries or from third-party packages,
             # and are the activities the converter knows least about.
-            [void]$sb.Append('    From the project''s own libraries or third-party packages. Flowchart steps using them are drawn' + $nl)
-            [void]$sb.Append('    as dashed boxes showing the activity type.' + $nl)
+            [void]$sb.Append('    From the project''s own libraries or third-party packages. Flowchart and sequence steps using them' + $nl)
+            [void]$sb.Append('    are drawn as dashed boxes showing the activity type.' + $nl)
             foreach ($e in $entries) {
                 $packages = (@($e.Packages.Keys) | Sort-Object) -join ', '
                 # At most five file names, so a type used across a large project stays on one readable line.
