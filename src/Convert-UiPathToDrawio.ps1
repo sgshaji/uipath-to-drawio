@@ -208,7 +208,7 @@ $script:CardHeader = 28
 $script:RowHeight = 22
 $script:RowGap = 4
 # The converter's version, shown in each conversion report so a report can be matched to a release.
-$script:ToolVersion = '0.1.0'
+$script:ToolVersion = '0.2.0'
 # A row of the project map wider than this (in pixels) is wrapped onto several rows.
 $script:MapRowWidth = 1600
 

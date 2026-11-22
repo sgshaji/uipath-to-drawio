@@ -2,7 +2,7 @@
 
 For maintainers. Work through it in order for each release. **Nothing is tagged or published until the owner approves (step 5).**
 
-The current candidate is **0.1.0**. Its release notes are the 0.1.0 entry in [`CHANGELOG.md`](../CHANGELOG.md).
+Replace `<version>` below with the version being released (for example `0.2.0`). Its release notes are that version's entry in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## 1. The code is ready
 
@@ -30,18 +30,15 @@ The current candidate is **0.1.0**. Its release notes are the 0.1.0 entry in [`C
 
 ## 3. Build the download
 
-Use PowerShell 7 to build the archive. Windows PowerShell 5.1's `Compress-Archive` writes folder separators that some unzip tools misread.
+Build the archive from the tag, so it holds exactly the tagged commit. Create the tag locally first (`git tag -a v<version> -m "uipath-to-drawio <version>"`), and push it only in step 6. Building twice from the same tag gives the same checksum.
 
-```powershell
-$version = '0.1.0'
-$stage = Join-Path $env:TEMP "uipath-to-drawio-$version"
-Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory $stage | Out-Null
-Copy-Item src, samples, docs, README.md, LICENSE, CHANGELOG.md -Destination $stage -Recurse
-Compress-Archive -Path $stage -DestinationPath ".\uipath-to-drawio-$version.zip" -Force
-(Get-FileHash ".\uipath-to-drawio-$version.zip" -Algorithm SHA256).Hash.ToLowerInvariant() + "  uipath-to-drawio-$version.zip" |
-    Set-Content ".\uipath-to-drawio-$version.zip.sha256" -Encoding ascii
+```bash
+git archive --format=zip --prefix=uipath-to-drawio-<version>/ -o uipath-to-drawio-<version>.zip v<version> src samples docs README.md LICENSE CHANGELOG.md
+h=$(sha256sum uipath-to-drawio-<version>.zip | cut -d' ' -f1)
+printf '%s  uipath-to-drawio-<version>.zip\n' "$h" > uipath-to-drawio-<version>.zip.sha256
 ```
+
+If a gate fails before publishing, delete the local tag (`git tag -d v<version>`), fix the problem, and start again.
 
 - [ ] The archive holds `src`, `samples`, `docs`, `README.md`, `LICENSE` and `CHANGELOG.md`, and nothing from `tests`, `private` or `output`.
 - [ ] Keep the archive and its `.sha256` file out of the repository.
@@ -57,7 +54,7 @@ On a machine or user account that has not run the tool before, if possible. Othe
   ```powershell
   & "$env:LOCALAPPDATA\Programs\drawio\app\draw.io.exe" -x -f png -p 1 -o map.png .\output\demo\OrderIntakeDemo.drawio
   ```
-- [ ] The report says `Version:  0.1.0`.
+- [ ] The report says `Version:  <version>`.
 - [ ] `Get-Help .\src\Convert-UiPathToDrawio.ps1 -Full` shows the help.
 
 ## 5. Approval
@@ -67,9 +64,9 @@ On a machine or user account that has not run the tool before, if possible. Othe
 ## 6. Publish (after approval only)
 
 ```powershell
-git tag -a v0.1.0 -m "uipath-to-drawio 0.1.0"
-git push origin v0.1.0
-gh release create v0.1.0 .\uipath-to-drawio-0.1.0.zip .\uipath-to-drawio-0.1.0.zip.sha256 --title "uipath-to-drawio 0.1.0" --notes-file <notes>
+git push origin main
+git push origin v<version>
+gh release create v<version> .\uipath-to-drawio-<version>.zip .\uipath-to-drawio-<version>.zip.sha256 --title "uipath-to-drawio <version>" --notes-file <notes>
 ```
 
 - [ ] The release notes are the `CHANGELOG.md` entry for the version, plus the archive's SHA-256 checksum.

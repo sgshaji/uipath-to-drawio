@@ -55,7 +55,7 @@ Summary pages are intentional, not evidence that the workflow has no business lo
 
 ### Sequences
 
-A workflow whose top-level activity is a Sequence gets a sequence page. Sequence pages are new on the main branch and are not in the 0.1.0 release.
+A workflow whose top-level activity is a Sequence gets a sequence page. Sequence pages were added in release 0.2.0.
 
 - The sequence is a frame with its name at the top. Its activities are stacked inside it, top to bottom, in the order written, joined by arrows.
 - A sequence inside it is a frame of its own, up to 8 levels deep. Frames are draw.io containers: moving one moves its contents. A deeper sequence is collapsed into one box saying how many activities it holds.

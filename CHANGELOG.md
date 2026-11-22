@@ -2,7 +2,16 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.2.0 (22 November 2026)
+
+Sequences, the most common kind of UiPath workflow, are now drawn step by step, with their branches, Try/Catch regions and loops. Coverage is still partial: in the compatibility corpus, 42.7% of activities are drawn individually and 350 of 657 workflows have every activity drawn. The tool still does not execute workflows and does not convert or migrate them to other platforms.
+
+### Compatibility, measured on the same 93 public projects (657 workflow files) as 0.1.0
+
+- **Processing:** all 93 projects converted without errors in both PowerShell versions, with byte-identical output.
+- **Step-by-step pages:** 642 of 657 workflows (0.1.0: 64). The other 15 have a Try/Catch or another activity at the top level and still get a summary page.
+- **Activities drawn as their own shape:** 5,639 of 13,191 (42.7%; 0.1.0: 2.3%). **Workflows with every activity drawn:** 350 of 657 (0.1.0: 13). A step-by-step page is not necessarily complete: the report says, for each workflow, how many of its activities are drawn.
+- **Checked against the source files:** for all 578 sequence pages, the drawn structure and every arrow match what an independent script reads from the XAML. State machine, flowchart and project map pages are byte-identical to 0.1.0. See the [compatibility report](docs/compatibility-report.md#part-2-release-020).
 
 ### Added
 
@@ -18,6 +27,14 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 
 - Internally, the graph builders say what each shape is (a state, a step, an invoke and so on) and one function decides how it is drawn. Output is unchanged.
 - The tests compare every state machine, flowchart and project map page made from the samples and fixtures with a stored baseline, byte for byte. The compatibility run can compare every page with an earlier run.
+
+### Known limitations
+
+- **Coverage is partial.** Application, browser and Excel scopes, Parallel, Pick, For Each File and Repeat Number Of Times are drawn as one box each, not expanded. Activities inside states and flowchart steps, and flowcharts or state machines nested in other activities, are not expanded. Nesting deeper than 8 levels is collapsed.
+- Arrows mean "this may run next". After a Try/Catch, or a loop that may run zero times, the arrow stays even if the inside always ends the path.
+- Large workflows make large pages: nested branches widen them and long sequences lengthen them.
+- Conditions and expressions are shown only with `-IncludeDetails`, as text, and never evaluated. Retry Scope's retry count is not shown.
+- Diagrams show structure, not runtime behaviour. The tool does not execute workflows and does not convert or migrate them to other platforms.
 
 ## 0.1.0 (22 November 2026)
 

@@ -10,7 +10,7 @@ See how a project's workflows invoke one another, review its state machines and 
 
 **This is a structural overview, not a complete picture of runtime behaviour.** State machines and flowcharts are drawn. Sequences are drawn step by step, with their If, Else If and Switch branches, Try/Catch regions and loops; application and browser scopes are not yet expanded, and other top-level workflow types receive summary pages. The tool does not execute workflows or migrate their implementation to another platform.
 
-> Sequence pages, with their branches, Try/Catch regions and loops, are new on the main branch and are not in the 0.1.0 release, which gives sequences a summary page. See the [changelog](CHANGELOG.md).
+> Sequence pages, with their branches, Try/Catch regions and loops, were added in release 0.2.0. Release 0.1.0 gives sequences a summary page. See the [changelog](CHANGELOG.md).
 
 [Quick start](#quick-start) | [Supported content](#supported-content) | [Options](#options) | [Detailed usage guide](docs/usage.md)
 
@@ -53,7 +53,7 @@ Open either image for a larger view, or see the [flowchart example](docs/images/
 - **To convert:** Windows with Windows PowerShell 5.1 (included in Windows 10 and 11) or PowerShell 7. No UiPath installation, credentials or extra runtime dependencies are needed.
 - **To view and edit:** the [draw.io desktop app](https://www.drawio.com), [app.diagrams.net](https://app.diagrams.net), or Visual Studio Code with the [Draw.io Integration extension](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio).
 
-**UiPath compatibility:** automated tests cover made-up XAML workflows and both saved-layout formats. A [compatibility run](docs/compatibility-report.md) over 93 public projects, from Studio 2018 to 2026, converted every project in both PowerShell versions. With release 0.1.0 only 10% of real workflows (64 of 657) are drawn in detail, because most are sequences. On the main branch, sequences have step-by-step pages and 26% of activities are drawn individually; the report keeps the [released and unreleased figures](docs/compatibility-report.md) apart. No cross-platform projects were available to test. Try a representative project and check the report before relying on the output. The converter itself is Windows-only.
+**UiPath compatibility:** automated tests cover made-up XAML workflows and both saved-layout formats. A [compatibility run](docs/compatibility-report.md) over 93 public projects, from Studio 2018 to 2026, converted every project in both PowerShell versions. With release 0.2.0, 642 of the 657 workflows have step-by-step pages, but coverage is partial: 42.7% of activities are drawn individually and 350 workflows have every activity drawn. The [compatibility report](docs/compatibility-report.md) gives the figures for each release. No cross-platform projects were available to test. Try a representative project and check the report before relying on the output. The converter itself is Windows-only.
 
 ## Quick start
 
@@ -62,7 +62,7 @@ Open either image for a larger view, or see the [flowchart example](docs/images/
 Download `uipath-to-drawio-<version>.zip` from the [latest release](https://github.com/sgshaji/uipath-to-drawio/releases/latest), extract it, and open PowerShell in the extracted folder. The release lists the file's SHA-256 checksum; to compare your download with it:
 
 ```powershell
-(Get-FileHash .\uipath-to-drawio-0.1.0.zip -Algorithm SHA256).Hash
+(Get-FileHash .\uipath-to-drawio-0.2.0.zip -Algorithm SHA256).Hash
 ```
 
 You can also download the current repository using **Code > Download ZIP**, or, with Git installed:
