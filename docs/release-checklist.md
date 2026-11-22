@@ -7,7 +7,7 @@ The current candidate is **0.1.0**. Its release notes are the 0.1.0 entry in [`C
 ## 1. The code is ready
 
 - [ ] `$script:ToolVersion` in `src/Convert-UiPathToDrawio.ps1` matches the version being released.
-- [ ] The `CHANGELOG.md` entry for this version is complete and says "release candidate, not yet released".
+- [ ] The `CHANGELOG.md` entry for this version is complete. Until the release is approved it says "release candidate, not yet released".
 - [ ] All tests pass in both PowerShell versions:
   ```powershell
   pwsh -NoProfile -File .\tests\Test-Converter.ps1
@@ -72,6 +72,6 @@ git push origin v0.1.0
 gh release create v0.1.0 .\uipath-to-drawio-0.1.0.zip .\uipath-to-drawio-0.1.0.zip.sha256 --title "uipath-to-drawio 0.1.0" --notes-file <notes>
 ```
 
-- [ ] The release notes are the `CHANGELOG.md` entry, with "(release candidate, not yet released)" replaced by the release date.
-- [ ] After publishing, update the README's "Get the tool" step to offer the release download first, with the hash check, and change the `CHANGELOG.md` heading to the release date.
+- [ ] The release notes are the `CHANGELOG.md` entry for the version, plus the archive's SHA-256 checksum.
+- [ ] Before tagging, date the `CHANGELOG.md` heading. The README's "Get the tool" step already points at the latest release.
 - [ ] Download the published archive once and check its hash against the `.sha256` file.

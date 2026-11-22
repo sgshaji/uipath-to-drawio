@@ -56,7 +56,13 @@ Open either image for a larger view, or see the [flowchart example](docs/images/
 
 ### 1. Get the tool
 
-Download this repository using **Code > Download ZIP**, extract it, and open PowerShell in the extracted folder. Alternatively, with Git installed:
+Download `uipath-to-drawio-<version>.zip` from the [latest release](https://github.com/sgshaji/uipath-to-drawio/releases/latest), extract it, and open PowerShell in the extracted folder. The release lists the file's SHA-256 checksum; to compare your download with it:
+
+```powershell
+(Get-FileHash .\uipath-to-drawio-0.1.0.zip -Algorithm SHA256).Hash
+```
+
+You can also download the current repository using **Code > Download ZIP**, or, with Git installed:
 
 ```powershell
 git clone https://github.com/sgshaji/uipath-to-drawio.git

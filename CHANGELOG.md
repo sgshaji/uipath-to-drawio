@@ -2,7 +2,7 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## 0.1.0 (release candidate, not yet released)
+## 0.1.0 (22 November 2026)
 
 The first release. It converts UiPath workflow files (`.xaml`) into editable draw.io diagrams, on Windows, with nothing to install beyond PowerShell.
 
@@ -24,14 +24,16 @@ The first release. It converts UiPath workflow files (`.xaml`) into editable dra
 ### Compatibility
 
 - Windows PowerShell 5.1 and PowerShell 7 give byte-identical output.
-- Tested on 93 public UiPath projects (Studio 2018 to 2026; classic, Windows-Legacy and Windows; VB and C#): all converted, with no diagram problems. See the [compatibility report](docs/compatibility-report.md).
+- Tested on 93 public UiPath projects (Studio 2018 to 2026; classic, Windows-Legacy and Windows project types; VB and C# expressions), 657 workflow files in all. See the [compatibility report](docs/compatibility-report.md). Two different results:
+  - **Processing:** all 93 projects were read and written out as valid diagram files and reports, without errors, in both PowerShell versions.
+  - **Detailed diagrams:** only **64 of the 657 workflows (10%)** are drawn in detail: the 20 state machines and 44 flowcharts. The other 593 get a summary page listing the workflows they invoke, and 63 of the 93 projects have no detailed diagram at all. A project that is processed successfully may still show little of its logic.
+- Cross-platform (portable) UiPath projects have not been tested: none was available. Compatibility with them is not claimed.
 
 ### Known limitations
 
-- **Most real workflows get a summary page only.** Sequences, If, Try/Catch and loops are not drawn step by step; in the compatibility corpus, 10% of workflows are drawn in detail. Sequence support is the next milestone.
+- **Most real workflows get a summary page only.** Sequences, If, Try/Catch and loops are not drawn step by step. In the compatibility corpus, 64 of 657 workflows are drawn in detail. Sequence support is the next milestone.
 - Activities inside states, and flowcharts or state machines nested inside other activities, are not expanded.
 - Only Invoke Workflow File creates links. Invoke Process, Run Parallel Process and coded workflows (`.cs`) are not followed.
 - Invoked file names are resolved relative to the project folder, as UiPath documents. A name written relative to the calling file's folder is reported as missing.
 - On Studio layouts, a long arrow label on a short arrow can still touch a nearby box, and one crowded state stretches the whole layout.
-- Cross-platform (portable) projects have not been tested: none was available in the corpus.
-- Diagrams show structure, not runtime behaviour.
+- Diagrams show structure, not runtime behaviour. The tool does not convert or migrate workflows to other platforms.
