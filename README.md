@@ -1,12 +1,12 @@
 # uipath-to-drawio
 
-Turn UiPath workflow files (`.xaml`) into editable [draw.io](https://www.drawio.com) diagrams for documentation, review and migration planning.
+Turn UiPath workflow files (`.xaml`) into editable [draw.io](https://www.drawio.com) diagrams.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![PowerShell 5.1 and 7](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE.svg)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-The converter runs locally on Windows, without UiPath Studio or additional PowerShell modules. Give it one workflow or a project folder to generate diagrams and a report of what was drawn, summarised or could not be read.
+See how a project's workflows invoke one another, review its state machines and flowcharts, and document an automation for review or migration planning, without opening UiPath Studio. The converter runs entirely offline in PowerShell on Windows, with no extra modules, and reports what it drew, summarised or could not read.
 
 **This is a structural overview, not a complete picture of runtime behaviour.** State machines and flowcharts are drawn; sequences and other workflow types currently receive summary pages. The tool does not execute workflows or migrate their implementation to another platform.
 
