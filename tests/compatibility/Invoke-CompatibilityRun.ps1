@@ -137,7 +137,7 @@ foreach ($p in $rows) {
         Id = $id; Repository = $p.Repository; ProjectPath = $p.ProjectPath; Commit = $p.Commit
         StudioVersion = $p.StudioVersion; TargetFramework = $p.TargetFramework; ExpressionLanguage = $p.ExpressionLanguage; OutputType = $p.OutputType
         Fetched = $false; Complete = $false; MissingFromDownload = 0; XamlFiles = 0; Exit7 = ''; Exit51 = ''; Seconds7 = ''; Seconds51 = ''; Error = ''
-        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; SequencePages = 0; ActivitiesTotal = 0; ActivitiesDrawn = 0; FullyDrawn = 0; Decisions = ''; NotExpanded = ''; StudioLayout = 0; AutoLayout = 0
+        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; SequencePages = 0; ActivitiesTotal = 0; ActivitiesDrawn = 0; FullyDrawn = 0; Decisions = ''; TryCatches = 0; NotExpanded = ''; StudioLayout = 0; AutoLayout = 0
         Missing = 0; Outside = 0; RunTime = 0; UnrecognisedTypes = ''; Warnings = 0; Unreadable = 0; NotWorkflows = 0; SkippedFolders = 0
         CheckProblems = 0; CheckDetails = ''
     }
@@ -219,6 +219,10 @@ foreach ($p in $rows) {
                     $pair[1][$x.Groups[1].Value] = $count + [int]$pair[1][$x.Groups[1].Value]
                 }
             }
+        }
+        foreach ($w in $workflows) {
+            $m = [regex]::Match($w, '(\d+) Try Catch(?:es)? drawn with Try, Catch and Finally regions')
+            if ($m.Success) { $row.TryCatches += [int]$m.Groups[1].Value }
         }
         $row.Decisions = (@($decisions.Keys | Sort-Object | ForEach-Object { $_ + '=' + $decisions[$_] }) -join '; ')
         $row.NotExpanded = (@($opaque.Keys | Sort-Object | ForEach-Object { $_ + '=' + $opaque[$_] }) -join '; ')
@@ -310,6 +314,7 @@ $lines = @(
     "Sequence pages (steps drawn top to bottom): $(& $sum 'SequencePages')"
     "Activities drawn: $(& $sum 'ActivitiesDrawn') of $(& $sum 'ActivitiesTotal') ($(if ((& $sum 'ActivitiesTotal') -gt 0) { [Math]::Round(100.0 * (& $sum 'ActivitiesDrawn') / (& $sum 'ActivitiesTotal'), 1) } else { 0 })%); workflows with every activity drawn: $(& $sum 'FullyDrawn')"
     "Decisions drawn with their branches: $(& $kinds 'Decisions')"
+    "Try Catches drawn with their regions: $(& $sum 'TryCatches')"
     "Activities holding others, not expanded: $(& $kinds 'NotExpanded')"
     "Studio layout used: $(& $sum 'StudioLayout'); automatic layout: $(& $sum 'AutoLayout')"
     "Invoked files missing: $(& $sum 'Missing'); outside the project: $(& $sum 'Outside'); set at run time: $(& $sum 'RunTime')"

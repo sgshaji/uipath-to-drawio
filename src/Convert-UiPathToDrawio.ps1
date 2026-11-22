@@ -125,6 +125,9 @@ $script:Style = @{
     CollapsedCard  = 'swimlane;rounded=1;startSize=28;fontStyle=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;swimlaneFillColor=#ffffff;collapsible=0;'
     SequenceFrame  = 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#eef3f8;strokeColor=#7a96b5;swimlaneFillColor=#fbfcfd;collapsible=0;'
     BranchBlock    = 'rounded=0;fillColor=none;strokeColor=none;container=1;collapsible=0;'
+    TryFrame       = 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#fbe9dc;strokeColor=#c5895f;swimlaneFillColor=#fffdfb;collapsible=0;'
+    Region         = 'swimlane;rounded=0;startSize=24;fontStyle=0;fillColor=#f7f3ef;strokeColor=#c9b8a8;swimlaneFillColor=#ffffff;collapsible=0;'
+    RegionEmpty    = 'text;fontSize=11;fontStyle=2;fontColor=#777777;align=center;verticalAlign=middle;'
     Join           = 'ellipse;fillColor=#666666;strokeColor=#666666;'
     Invoke         = 'shape=process;size=0.04;fillColor=#e1d5e7;strokeColor=#9673a6;'
     InvokeMissing  = 'shape=process;size=0.04;dashed=1;fillColor=#ffffff;strokeColor=#b85450;fontColor=#b85450;'
@@ -161,6 +164,9 @@ $script:RoleStyle = @{
     'collapsed|Card'  = $script:Style.CollapsedCard
     'sequence|Frame'  = $script:Style.SequenceFrame
     'branchBlock'     = $script:Style.BranchBlock
+    'tryCatch'        = $script:Style.TryFrame
+    'region'          = $script:Style.Region
+    'regionEmpty'     = $script:Style.RegionEmpty
     'join'            = $script:Style.Join
     'decision'        = $script:Style.Decision
     'switch'          = $script:Style.Switch
@@ -1104,6 +1110,11 @@ function Get-FlowchartGraph {
 # its own. An If, an Else If (UiPath's IfElseIf) or a Switch is a decision with its branches side by
 # side below it, each labelled (Then and Else, or the case values and Default), meeting again at a dot.
 # A branch with nothing in it is an arrow straight to the dot: when it is taken, nothing happens.
+# A Try Catch is a frame holding its regions in the order written: Try, each Catch (named after its
+# exception type) and Finally. No arrows join the regions: handling an exception is not an ordinary
+# path, and which Catch runs is not something the file states. The headers say only what Microsoft's
+# Workflow Foundation documentation states: a Catch runs only if the Try throws its exception type;
+# Finally runs after the Try, or a Catch that handled the exception, completes.
 # Nothing else is expanded: any other activity that holds activities (Try Catch, loops, scopes, and
 # containers from other packages) is drawn as one dashed box saying what it is and how many activities
 # it holds, and listing the workflows invoked inside it. Conditions are never evaluated; they are shown
@@ -1117,6 +1128,8 @@ $script:BranchBus = 20       # from a decision down to the line its branches lea
 $script:BranchDrop = 34      # from that line down to the top of each branch, with room for the label
 $script:BranchGap = 30       # between branches side by side
 $script:JoinSize = 14        # the dot where the branches meet again
+$script:RegionHeader = 24    # the header of a Try, Catch or Finally region
+$script:RegionGap = 16       # between the regions of a Try Catch
 
 function Get-ActivityChildren {
     # Every child element that is an activity: not a property element (Name.Property), not markup.
@@ -1145,7 +1158,7 @@ function New-SequenceItem {
         Element = $Element; Type = $Type; Source = $Source; Label = $Label
         Shape = 'Box'; Role = 'step'; Link = $null; Children = $null; Rows = $null
         Inside = 0; Reason = ''; Counts = $Counts
-        Diamond = $null; Branches = $null; Join = $null; BusY = 0.0; JoinBusY = 0.0
+        Diamond = $null; Branches = $null; Join = $null; BusY = 0.0; JoinBusY = 0.0; Sections = $null
         X = 0.0; Y = 0.0; W = 0.0; H = 0.0
     }
 }
@@ -1177,6 +1190,23 @@ function Set-BranchBlock {
     return $Item
 }
 
+function Get-ExceptionTypeName {
+    # The exception type a Catch handles, from its x:TypeArguments ("s:Exception"). A .NET namespace
+    # (clr-namespace:System;...) gives the full name, System.Exception; otherwise the name as written.
+    param($Catch)
+    $written = Get-Attr $Catch 'TypeArguments' 'Xaml'
+    if ([string]::IsNullOrWhiteSpace($written)) { return '(type not given)' }
+    $written = $written.Trim()
+    $name = $written
+    $prefix = ''
+    $colon = $written.IndexOf(':')
+    if ($colon -gt 0) { $prefix = $written.Substring(0, $colon); $name = $written.Substring($colon + 1) }
+    $ns = $Catch.GetNamespaceOfPrefix($prefix)
+    $m = [regex]::Match([string]$ns, '^clr-namespace:([^;]+)')
+    if ($m.Success) { return $m.Groups[1].Value.Trim() + '.' + $name }
+    return $name
+}
+
 function Get-SequenceItem {
     # What the sequence page draws for one activity: a frame (a sequence, with its activities), a box
     # (one activity, or an invoked workflow), or a dashed card (an activity holding others, not expanded).
@@ -1186,6 +1216,7 @@ function Get-SequenceItem {
     $item = New-SequenceItem $Element $type $source (Get-StepLabel $Element) (Test-CountsAsActivity $Element)
     $isSequence = ($type -eq 'Sequence' -and $source -eq 'WorkflowFoundation')
     $isBranching = (($source -eq 'WorkflowFoundation' -and ($type -eq 'If' -or $type -eq 'Switch')) -or ($source -eq 'UiPath' -and $type -eq 'IfElseIf'))
+    $isTryCatch = ($source -eq 'WorkflowFoundation' -and $type -eq 'TryCatch')
     if ($isSequence -and $Depth -le $script:MaxSequenceDepth) {
         $children = Get-ActivityChildren $Element
         if ($children.Count -eq 0) {
@@ -1207,6 +1238,33 @@ function Get-SequenceItem {
             $item.Link = $row.Link
             return $item
         }
+    }
+    if ($isTryCatch -and $Depth -le $script:MaxSequenceDepth) {
+        # Regions in the order written. Each is @{ Header; Item (or $null when empty) }.
+        $item.Shape = 'Regions'
+        $item.Role = 'tryCatch'
+        $item.Sections = New-Object System.Collections.Generic.List[object]
+        $try = Get-BranchActivity $Element 'TryCatch.Try'
+        $sub = $null
+        if ($null -ne $try) { $sub = Get-SequenceItem $try ($Depth + 1) $Context $InvokeByElement }
+        $item.Sections.Add(@{ Header = 'Try'; Item = $sub })
+        foreach ($holder in (Get-ChildElement $Element 'TryCatch.Catches')) {
+            foreach ($catch in (Get-ChildElement $holder 'Catch')) {
+                $handler = $null
+                foreach ($action in (Get-ChildElement $catch 'ActivityAction')) { $handler = Get-ActivityChild $action }
+                $sub = $null
+                if ($null -ne $handler) { $sub = Get-SequenceItem $handler ($Depth + 1) $Context $InvokeByElement }
+                $item.Sections.Add(@{ Header = 'Catch ' + (Get-ExceptionTypeName $catch) + ' (only if the Try throws one)'; Item = $sub })
+            }
+        }
+        foreach ($fin in (Get-ChildElement $Element 'TryCatch.Finally')) {
+            $final = $null
+            foreach ($c in (Get-ActivityChildren $fin)) { if ($null -eq $final) { $final = $c } }
+            $sub = $null
+            if ($null -ne $final) { $sub = Get-SequenceItem $final ($Depth + 1) $Context $InvokeByElement }
+            $item.Sections.Add(@{ Header = 'Finally (after the Try, or a Catch that handled its exception, completes)'; Item = $sub })
+        }
+        return $item
     }
     if ($isBranching -and $Depth -le $script:MaxSequenceDepth) {
         $label = $item.Label
@@ -1288,7 +1346,7 @@ function Get-SequenceItem {
         $item.Inside = $inside
         $activities = Format-Count $inside 'activity' 'activities'
         $suffix = ''
-        if ($isSequence -or ($isBranching -and $Depth -gt $script:MaxSequenceDepth)) {
+        if ($isSequence -or (($isBranching -or $isTryCatch) -and $Depth -gt $script:MaxSequenceDepth)) {
             $item.Reason = 'depth'
             $text = 'Nested too deep to draw: ' + $activities + ' inside'
         }
@@ -1327,6 +1385,33 @@ function Get-SequenceItem {
 function Set-SequenceLayout {
     # Sizes every item and places each frame's items centred, top to bottom, relative to the frame.
     param($Item)
+    if ($Item.Shape -eq 'Regions') {
+        # Regions stacked top to bottom, all as wide as the widest, each holding its activity centred.
+        $widest = [Math]::Max(160.0, (Get-TextSize $Item.Label 7.5 16).W + 40)
+        foreach ($sec in $Item.Sections) {
+            if ($null -ne $sec.Item) { Set-SequenceLayout $sec.Item; $innerW = $sec.Item.W; $innerH = $sec.Item.H }
+            else { $innerW = (Get-TextSize '(nothing here)' 6.6 14).W + 20; $innerH = 24.0 }
+            $sec.InnerW = $innerW
+            $sec.InnerH = $innerH
+            $w = [Math]::Max($innerW + 2 * $script:SequencePad, (Get-TextSize $sec.Header 6.6 14).W + 30)
+            if ($w -gt $widest) { $widest = $w }
+        }
+        $Item.W = $widest + 2 * $script:SequencePad
+        $y = $script:FrameHeader + $script:SequencePad
+        foreach ($sec in $Item.Sections) {
+            $sec.X = $script:SequencePad
+            $sec.Y = $y
+            $sec.W = $widest
+            $sec.H = $script:RegionHeader + 2 * $script:SequencePad + $sec.InnerH
+            if ($null -ne $sec.Item) {
+                $sec.Item.X = ($widest - $sec.Item.W) / 2
+                $sec.Item.Y = $script:RegionHeader + $script:SequencePad
+            }
+            $y += $sec.H + $script:RegionGap
+        }
+        $Item.H = $y - $script:RegionGap + $script:SequencePad
+        return
+    }
     if ($Item.Shape -eq 'Block') {
         # The decision on top, centred; its branches side by side below it; the dot under them all.
         # The block is symmetric about its centre, so the arrows of the sequence around it stay straight.
@@ -1399,6 +1484,17 @@ function Add-SequenceItem {
     # moving a frame in draw.io moves its contents. Arrows join each activity to the next.
     param($Page, $Item, [string]$ParentId)
     $style = $script:Style.Edge + 'edgeStyle=none;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;'
+    if ($Item.Shape -eq 'Regions') {
+        $id = Add-Vertex $Page $Item.Label (Get-NodeStyle @{ Role = 'tryCatch'; Kind = 'Regions'; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId
+        foreach ($sec in $Item.Sections) {
+            $secId = Add-Vertex $Page $sec.Header (Get-NodeStyle @{ Role = 'region'; Kind = 'Region'; LabelSide = $null }) $sec.X $sec.Y $sec.W $sec.H $id
+            if ($null -ne $sec.Item) { [void](Add-SequenceItem $Page $sec.Item $secId) }
+            else {
+                [void](Add-Vertex $Page '(nothing here)' (Get-NodeStyle @{ Role = 'regionEmpty'; Kind = 'Text'; LabelSide = $null }) (($sec.W - $sec.InnerW) / 2) ($script:RegionHeader + $script:SequencePad) $sec.InnerW $sec.InnerH $secId)
+            }
+        }
+        return $id
+    }
     if ($Item.Shape -eq 'Block') {
         # An invisible container, so the decision, its branches and the dot move together in draw.io.
         $id = Add-Vertex $Page '' (Get-NodeStyle @{ Role = 'branchBlock'; Kind = 'Block'; LabelSide = $null }) $Item.X $Item.Y $Item.W $Item.H $ParentId
@@ -1465,6 +1561,10 @@ function Add-SequenceItemStats {
         'Block' {
             if ($c.Counts) { $Stats.Branching++; $Stats.BranchKinds[$c.Type] = 1 + [int]$Stats.BranchKinds[$c.Type] }
             foreach ($b in $c.Branches) { if ($null -ne $b.Item) { Add-SequenceItemStats $b.Item $Stats } }
+        }
+        'Regions' {
+            if ($c.Counts) { $Stats.TryCatches++ }
+            foreach ($sec in $c.Sections) { if ($null -ne $sec.Item) { Add-SequenceItemStats $sec.Item $Stats } }
         }
         'Card' {
             $Stats.Collapsed++
@@ -2355,16 +2455,19 @@ function New-WorkflowPage {
         $root.X = $left
         $root.Y = $top
         [void](Add-SequenceItem $page $root '1')
-        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{}; Branching = 0; BranchKinds = @{} }
+        $stats = @{ Drawn = 0; Sequences = 0; Boxes = 0; Collapsed = 0; Inside = 0; Kinds = @{}; Branching = 0; BranchKinds = @{}; TryCatches = 0 }
         if ($root.Shape -eq 'Frame') { Get-SequenceStats $root $stats }
         $Workflow.NotDrawn = [Math]::Max(0, $Workflow.ActivityCount - $stats.Drawn)
-        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences + $stats.Branching) 'step' 'steps') + ' drawn top to bottom'
+        $text = 'sequence: ' + (Format-Count ($stats.Boxes + $stats.Collapsed + $stats.Sequences + $stats.Branching + $stats.TryCatches) 'step' 'steps') + ' drawn top to bottom'
         if ($stats.Sequences -gt 0) { $text += ', including ' + (Format-Count $stats.Sequences 'nested sequence' 'nested sequences') }
         if ($stats.Branching -gt 0) {
             $kinds = @($stats.BranchKinds.Keys | Sort-Object | ForEach-Object { if ($stats.BranchKinds[$_] -gt 1) { $_ + ' x' + $stats.BranchKinds[$_] } else { $_ } })
             $with = ' drawn with their branches ('
             if ($stats.Branching -eq 1) { $with = ' drawn with its branches (' }
             $text += '; ' + (Format-Count $stats.Branching 'decision' 'decisions') + $with + ($kinds -join ', ') + ')'
+        }
+        if ($stats.TryCatches -gt 0) {
+            $text += '; ' + (Format-Count $stats.TryCatches 'Try Catch' 'Try Catches') + ' drawn with Try, Catch and Finally regions'
         }
         if ($stats.Collapsed -gt 0) {
             $kinds = @($stats.Kinds.Keys | Sort-Object | ForEach-Object { if ($stats.Kinds[$_] -gt 1) { $_ + ' x' + $stats.Kinds[$_] } else { $_ } })

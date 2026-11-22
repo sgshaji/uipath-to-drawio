@@ -16,8 +16,8 @@
          6  an Else If: If, Else If with nothing in it, Else If holding a sequence, and Else
          7  an Else If with one condition and no Else
          8  Ifs nested ten deep: those past the depth limit are collapsed
-         9  an If whose Then is a Try Catch (not expanded)
-       44 activities below the top-level sequence; 37 are drawn and 7 are inside collapsed boxes.
+         9  an If whose Then is a Try Catch, drawn with its Try region
+       44 activities below the top-level sequence; 41 are drawn and 3 are inside a collapsed box.
        16 decisions are drawn with their branches: If x12, IfElseIf x2, Switch x2. -->
   <Sequence DisplayName="Route an order" sap2010:WorkflowViewState.IdRef="Sequence_1">
     <If Condition="[order.IsValid]" DisplayName="Is the order valid?" sap2010:WorkflowViewState.IdRef="If_1">

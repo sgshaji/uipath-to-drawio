@@ -889,8 +889,8 @@ try {
     Assert ($frameProblems.Count -eq 0) ('sequence page: every shape inside its frame, none overlapping, arrows straight down' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
     Assert ($report -match 'sequences\.xaml - sequence: ') 'a top-level sequence gets a sequence page, not a summary'
-    Assert ($report -match 'Activities drawn: 22 of 31\.') 'report counts the activities drawn (22 of 31)'
-    Assert ($report -match 'sequences\.xaml \(sequence\): 9 activities not drawn') 'report says how many activities are inside boxes not expanded (9)'
+    Assert ($report -match 'Activities drawn: 24 of 31\.') 'report counts the activities drawn (24 of 31)'
+    Assert ($report -match 'sequences\.xaml \(sequence\): 7 activities not drawn') 'report says how many activities are inside boxes not expanded (7)'
     $cells = @{}
     $byId = @{}
     foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) {
@@ -929,14 +929,14 @@ try {
     }
     Assert ($cells['Is it urgent?'].Style -match '^rhombus') 'an If is drawn as a decision'
     Assert ((((Get-InsideOrder 'Escalation') -join '|') -eq 'Escalate|Mark as escalated') -and $cells['Escalate'].Label -match 'Escalate\.xaml \(missing\)') 'its Then branch is drawn, with the workflow invoked inside it'
-    Assert ((& $rowsOf 'Try to send') -contains '[TryCatch] 2 activities inside, not drawn in version 1') 'a Try Catch is one dashed box, not expanded'
+    Assert ($cells['Try to send'].Style -like 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#fbe9dc;*') 'a Try Catch is drawn as a frame with its regions'
     $oldRows = & $rowsOf 'Old step'
     Assert ($oldRows -contains '3 activities commented out (not run)') 'a Comment Out says its activities do not run'
     Assert ($oldRows -contains 'OldCleanup.xaml (missing) (commented out)') 'a workflow invoked inside a Comment Out is listed as commented out'
     Assert ($cells['Send to the queue'].Label -eq "Send to the queue`n[RouteToQueue]" -and $cells['Send to the queue'].Style -match 'dashed=1') 'an activity from another package is a dashed box showing its type'
     Assert ((& $rowsOf 'Run as a batch') -contains '[BatchScope] from another package: 2 activities inside, not drawn') 'a container from another package is not expanded, and says where it comes from'
-    $frames = @($byId.Values | Where-Object { $_.Vertex -and $_.Style -match '^swimlane;rounded=0;startSize=26;' }).Count
-    Assert ($frames -eq 10) "sequences up to the depth limit are frames (found $frames, expected 10: the top level, Prepare, Escalation and Levels 2 to 8)"
+    $frames = @($byId.Values | Where-Object { $_.Vertex -and $_.Style -match '^swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#eef3f8;' }).Count
+    Assert ($frames -eq 11) "sequences up to the depth limit are frames (found $frames, expected 11: the top level, Prepare, Escalation, Send and Levels 2 to 8)"
     Assert ((& $rowsOf 'Level 9') -contains 'Nested too deep to draw: 2 activities inside') 'a sequence past the depth limit is collapsed and says how much it holds'
     Assert ($cells.ContainsKey('Delay') -and -not $cells.ContainsKey('Deepest step')) 'an activity with no display name is still drawn; activities inside collapsed boxes are not'
     Assert ($d.Text -notmatch '\[urgent\]') 'leaves the If condition out by default'
@@ -951,9 +951,9 @@ try {
     $frameProblems = Get-FrameProblems $page
     Assert ($frameProblems.Count -eq 0) ('branches: every shape inside its container, no arrow through a shape, no label over a shape or label' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
-    Assert ($report -match 'Activities drawn: 37 of 44\.') 'report counts the activities drawn (37 of 44)'
+    Assert ($report -match 'Activities drawn: 41 of 44\.') 'report counts the activities drawn (41 of 44)'
     Assert ($report -match '16 decisions drawn with their branches \(If x12, IfElseIf x2, Switch x2\)') 'report counts the decisions drawn, by type'
-    Assert ($report -match 'branches\.xaml \(sequence\): 7 activities not drawn') 'report says how many activities are inside boxes not expanded (7)'
+    Assert ($report -match 'branches\.xaml \(sequence\): 3 activities not drawn') 'report says how many activities are inside boxes not expanded (3)'
     $info = @{}
     foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) { $ci = Get-CellInfo $c; $info[$ci.Id] = $ci }
     function Get-ShapeName($Id) {
@@ -989,7 +989,7 @@ try {
     Assert ((Get-Branches 'Choose a carrier') -eq 'Then>Use carrier A, Else>join') 'an Else If with no Else block: its last Else goes straight on'
     Assert ((Get-Branches 'Level 7?') -eq 'Then>Level 8?, Else>join') 'decisions are drawn down to the depth limit'
     Assert ((@($info.Values | Where-Object { [string]$_.Label -eq 'Nested too deep to draw: 3 activities inside' })).Count -eq 1 -and -not ($info.Values | Where-Object { $_.Label -like 'Level 9?*' })) 'past the depth limit an If is one box saying how much it holds'
-    Assert ((Get-Branches 'Retry needed?') -eq 'Then>Try again, Else>No retry') 'a Try Catch in a branch is drawn as a box, not expanded'
+    Assert ((Get-Branches 'Retry needed?') -eq 'Then>Try again, Else>No retry') 'a Try Catch can sit in a branch'
     Assert ($d.Text -notmatch 'order\.IsValid|order\.Region|order\.Weight') 'leaves conditions and switch expressions out by default'
     $joins = @($info.Values | Where-Object { $_.Style -like 'ellipse;fillColor=#666666;*' }).Count
     Assert ($joins -eq 18) "every decision's branches meet again at one dot (found $joins, expected 18: one for each decision, including both Else If links)"
@@ -999,6 +999,53 @@ try {
     Assert ((Get-FrameProblems $dd.Doc.SelectNodes('/mxfile/diagram')[0]).Count -eq 0) '-IncludeDetails: the larger decisions still fit without overlaps'
     $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'branches.xaml'); OutputPath = (Join-Path $work 'branches-again') }
     Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with branches comes out the same every time'
+
+    # --- Try Catch inside sequences ----------------------------------------------------------------
+    Write-Host "`nTry Catch"
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'try-catch.xaml'); OutputPath = (Join-Path $work 'try-catch') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $page = $d.Doc.SelectNodes('/mxfile/diagram')[0]
+    $frameProblems = Get-FrameProblems $page
+    Assert ($frameProblems.Count -eq 0) ('try-catch: every shape inside its container, no overlaps' + $(if ($frameProblems.Count) { ' -- ' + ($frameProblems -join '; ') } else { '' }))
+    $report = [System.IO.File]::ReadAllText($r.ReportFile)
+    Assert ($report -match 'Activities drawn: 34 of 36\.') 'report counts the activities drawn (34 of 36)'
+    Assert ($report -match '13 Try Catches drawn with Try, Catch and Finally regions') 'report counts the Try Catches drawn (13)'
+    $info = @{}
+    foreach ($c in $page.SelectNodes('mxGraphModel/root/*')) { $ci = Get-CellInfo $c; $info[$ci.Id] = $ci }
+    function Get-Regions($Label) {
+        # "header>content" for each region of a Try Catch, top to bottom; content is the first line of
+        # the region's shape, or "(nothing here)".
+        $tc = @($info.Values | Where-Object { $_.Vertex -and ([string]$_.Label -split "`n")[0] -eq $Label -and $_.Style -like 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#fbe9dc;*' })[0]
+        $regions = @($info.Values | Where-Object { $_.Vertex -and $_.Parent -eq $tc.Id } | Sort-Object { [double]$_.Inner.SelectSingleNode('mxGeometry').GetAttribute('y') })
+        return (@($regions | ForEach-Object {
+                    $rid = $_.Id
+                    $inside = @($info.Values | Where-Object { $_.Vertex -and $_.Parent -eq $rid })[0]
+                    $name = ([string]$inside.Label -split "`n")[0]
+                    if ($inside.Style -like 'rounded=0;fillColor=none;strokeColor=none;container=1;*') {
+                        # A branch block is named after its decision.
+                        $bid = $inside.Id
+                        $name = ([string]@($info.Values | Where-Object { $_.Parent -eq $bid -and $_.Style -like 'rhombus;*' })[0].Label -split "`n")[0]
+                    }
+                    [string]$_.Label + '>' + $name
+                }) -join ' / ')
+    }
+    $catchNote = ' (only if the Try throws one)'
+    $finallyNote = 'Finally (after the Try, or a Catch that handled its exception, completes)'
+    Assert ((Get-Regions 'Save the order') -eq ("Try>Save / Catch System.Exception$catchNote>Log the failure / Catch BusinessRuleException$catchNote>Handle the rule / $finallyNote>Clean up")) 'a Try Catch shows Try, each Catch with its exception type in the order written, and Finally'
+    Assert ((Get-Regions 'Read the file') -eq ("Try>Read it / Catch System.IO.IOException$catchNote>(nothing here)")) 'an empty Catch says so; a missing Finally is not drawn; a .NET namespace gives the full type name'
+    Assert ((Get-Regions 'Always tidy') -eq "Try>Do the work / $finallyNote>Log the end") 'a Try Catch with no Catches shows Try and Finally only'
+    Assert ((Get-Regions 'Nothing to try') -eq ("Try>(nothing here) / Catch System.Exception$catchNote>Log it")) 'a missing Try is drawn as an empty Try region'
+    Assert ((Get-Regions 'Call the service') -eq ("Try>Call it / Catch System.Exception$catchNote>Can we retry?")) 'a decision inside a Catch is drawn'
+    $tcIds = @($info.Values | Where-Object { $_.Style -like 'swimlane;rounded=0;startSize=26;fontStyle=1;fillColor=#fbe9dc;*' } | ForEach-Object { $_.Id })
+    $regionIds = @($info.Values | Where-Object { $tcIds -contains $_.Parent } | ForEach-Object { $_.Id })
+    $regionArrows = @($page.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]') | Where-Object { $tcIds -contains $_.GetAttribute('parent') -or $regionIds -contains $_.GetAttribute('source') -or $regionIds -contains $_.GetAttribute('target') }).Count
+    Assert ($regionArrows -eq 0) "no arrow joins the regions of a Try Catch (found $regionArrows)"
+    Assert (@($info.Values | Where-Object { [string]$_.Label -match '^Write to the store\nStore\\Write\.xaml \(missing\)$' }).Count -eq 1 -and @($info.Values | Where-Object { [string]$_.Label -match '^Notify the owner\nNotify\.xaml \(missing\)$' }).Count -eq 1) 'invokes inside a Try and a Catch name their workflows'
+    Assert ((Get-Regions 'Check it') -eq ("Try>Run the check / Catch System.Exception$catchNote>Mark as unchecked")) 'a Try Catch inside a branch is drawn with its regions'
+    Assert ((Get-Regions 'Guard 7') -eq 'Try>Guard 8') 'Try Catches are drawn down to the depth limit'
+    Assert (@($info.Values | Where-Object { [string]$_.Label -eq 'Nested too deep to draw: 2 activities inside' }).Count -eq 1 -and -not @($info.Values | Where-Object { [string]$_.Label -eq 'Guard 9' }).Count) 'past the depth limit a Try Catch is one box saying how much it holds'
+    $again = Invoke-Converter @{ Path = (Join-Path $fixtures 'try-catch.xaml'); OutputPath = (Join-Path $work 'try-catch-again') }
+    Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'a page with Try Catches comes out the same every time'
 
     # --- Regression baseline: state machine, flowchart and project map pages, byte for byte --------
     Write-Host "`nRegression baseline"

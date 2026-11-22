@@ -1,0 +1,146 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="TryCatches"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:s="clr-namespace:System;assembly=mscorlib"
+ xmlns:sio="clr-namespace:System.IO;assembly=mscorlib"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input: Try Catch inside a sequence. In order:
+         1  Try (a sequence with an invoke), two Catches (System.Exception, then UiPath's
+            BusinessRuleException, whose handler rethrows) and a Finally
+         2  a Catch whose handler is empty (System.IO.IOException), and no Finally
+         3  no Catches at all, and a Finally
+         4  no Try at all
+         5  a Catch handler holding an If, which is drawn with its branches
+         6  a Try Catch inside the Then branch of an If
+         7  Try Catches nested nine deep in each other's Try: those past the depth limit are collapsed
+       Exception handling is not drawn as arrows between the regions.
+       36 activities below the top-level sequence (Catch elements are not activities); 34 are drawn
+       and 2 are inside a collapsed box. 13 Try Catches are drawn with their regions (Guard 8 is past
+       the depth limit); 2 decisions (If) with their branches. -->
+  <Sequence DisplayName="Process an order" sap2010:WorkflowViewState.IdRef="Sequence_1">
+    <TryCatch DisplayName="Save the order" sap2010:WorkflowViewState.IdRef="TryCatch_1">
+      <TryCatch.Try>
+        <Sequence DisplayName="Save" sap2010:WorkflowViewState.IdRef="Sequence_2">
+          <Assign DisplayName="Prepare the record" sap2010:WorkflowViewState.IdRef="Assign_1" />
+          <ui:InvokeWorkflowFile DisplayName="Write to the store" WorkflowFileName="Store\Write.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_1" />
+        </Sequence>
+      </TryCatch.Try>
+      <TryCatch.Catches>
+        <Catch x:TypeArguments="s:Exception" sap2010:WorkflowViewState.IdRef="Catch`1_1">
+          <ActivityAction x:TypeArguments="s:Exception">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+            </ActivityAction.Argument>
+            <ui:LogMessage DisplayName="Log the failure" sap2010:WorkflowViewState.IdRef="LogMessage_1" />
+          </ActivityAction>
+        </Catch>
+        <Catch x:TypeArguments="ui:BusinessRuleException" sap2010:WorkflowViewState.IdRef="Catch`1_2">
+          <ActivityAction x:TypeArguments="ui:BusinessRuleException">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="ui:BusinessRuleException" Name="ruleError" />
+            </ActivityAction.Argument>
+            <Sequence DisplayName="Handle the rule" sap2010:WorkflowViewState.IdRef="Sequence_3">
+              <ui:InvokeWorkflowFile DisplayName="Notify the owner" WorkflowFileName="Notify.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_2" />
+              <Rethrow DisplayName="Pass it on" sap2010:WorkflowViewState.IdRef="Rethrow_1" />
+            </Sequence>
+          </ActivityAction>
+        </Catch>
+      </TryCatch.Catches>
+      <TryCatch.Finally>
+        <Sequence DisplayName="Clean up" sap2010:WorkflowViewState.IdRef="Sequence_4">
+          <Assign DisplayName="Release the lock" sap2010:WorkflowViewState.IdRef="Assign_2" />
+        </Sequence>
+      </TryCatch.Finally>
+    </TryCatch>
+    <TryCatch DisplayName="Read the file" sap2010:WorkflowViewState.IdRef="TryCatch_2">
+      <TryCatch.Try>
+        <Assign DisplayName="Read it" sap2010:WorkflowViewState.IdRef="Assign_3" />
+      </TryCatch.Try>
+      <TryCatch.Catches>
+        <Catch x:TypeArguments="sio:IOException" sap2010:WorkflowViewState.IdRef="Catch`1_3">
+          <ActivityAction x:TypeArguments="sio:IOException">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="sio:IOException" Name="exception" />
+            </ActivityAction.Argument>
+          </ActivityAction>
+        </Catch>
+      </TryCatch.Catches>
+    </TryCatch>
+    <TryCatch DisplayName="Always tidy" sap2010:WorkflowViewState.IdRef="TryCatch_3">
+      <TryCatch.Try>
+        <Assign DisplayName="Do the work" sap2010:WorkflowViewState.IdRef="Assign_4" />
+      </TryCatch.Try>
+      <TryCatch.Finally>
+        <ui:LogMessage DisplayName="Log the end" sap2010:WorkflowViewState.IdRef="LogMessage_2" />
+      </TryCatch.Finally>
+    </TryCatch>
+    <TryCatch DisplayName="Nothing to try" sap2010:WorkflowViewState.IdRef="TryCatch_4">
+      <TryCatch.Catches>
+        <Catch x:TypeArguments="s:Exception" sap2010:WorkflowViewState.IdRef="Catch`1_4">
+          <ActivityAction x:TypeArguments="s:Exception">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+            </ActivityAction.Argument>
+            <ui:LogMessage DisplayName="Log it" sap2010:WorkflowViewState.IdRef="LogMessage_3" />
+          </ActivityAction>
+        </Catch>
+      </TryCatch.Catches>
+    </TryCatch>
+    <TryCatch DisplayName="Call the service" sap2010:WorkflowViewState.IdRef="TryCatch_5">
+      <TryCatch.Try>
+        <ui:InvokeWorkflowFile DisplayName="Call it" WorkflowFileName="Service\Call.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_3" />
+      </TryCatch.Try>
+      <TryCatch.Catches>
+        <Catch x:TypeArguments="s:Exception" sap2010:WorkflowViewState.IdRef="Catch`1_5">
+          <ActivityAction x:TypeArguments="s:Exception">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+            </ActivityAction.Argument>
+            <If Condition="[retryAllowed]" DisplayName="Can we retry?" sap2010:WorkflowViewState.IdRef="If_1">
+              <If.Then>
+                <ui:InvokeWorkflowFile DisplayName="Call it again" WorkflowFileName="Service\Call.xaml" sap2010:WorkflowViewState.IdRef="InvokeWorkflowFile_4" />
+              </If.Then>
+              <If.Else>
+                <Throw DisplayName="Give up" sap2010:WorkflowViewState.IdRef="Throw_1" />
+              </If.Else>
+            </If>
+          </ActivityAction>
+        </Catch>
+      </TryCatch.Catches>
+    </TryCatch>
+    <If Condition="[needsCheck]" DisplayName="Needs a check?" sap2010:WorkflowViewState.IdRef="If_2">
+      <If.Then>
+        <TryCatch DisplayName="Check it" sap2010:WorkflowViewState.IdRef="TryCatch_6">
+          <TryCatch.Try>
+            <Assign DisplayName="Run the check" sap2010:WorkflowViewState.IdRef="Assign_5" />
+          </TryCatch.Try>
+          <TryCatch.Catches>
+            <Catch x:TypeArguments="s:Exception" sap2010:WorkflowViewState.IdRef="Catch`1_6">
+              <ActivityAction x:TypeArguments="s:Exception">
+                <ActivityAction.Argument>
+                  <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+                </ActivityAction.Argument>
+                <Assign DisplayName="Mark as unchecked" sap2010:WorkflowViewState.IdRef="Assign_6" />
+              </ActivityAction>
+            </Catch>
+          </TryCatch.Catches>
+        </TryCatch>
+      </If.Then>
+    </If>
+    <TryCatch DisplayName="Guard 1" sap2010:WorkflowViewState.IdRef="TryCatch_11"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 2" sap2010:WorkflowViewState.IdRef="TryCatch_12"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 3" sap2010:WorkflowViewState.IdRef="TryCatch_13"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 4" sap2010:WorkflowViewState.IdRef="TryCatch_14"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 5" sap2010:WorkflowViewState.IdRef="TryCatch_15"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 6" sap2010:WorkflowViewState.IdRef="TryCatch_16"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 7" sap2010:WorkflowViewState.IdRef="TryCatch_17"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 8" sap2010:WorkflowViewState.IdRef="TryCatch_18"><TryCatch.Try>
+    <TryCatch DisplayName="Guard 9" sap2010:WorkflowViewState.IdRef="TryCatch_19"><TryCatch.Try>
+      <Assign DisplayName="Innermost work" sap2010:WorkflowViewState.IdRef="Assign_7" />
+    </TryCatch.Try></TryCatch></TryCatch.Try></TryCatch></TryCatch.Try></TryCatch></TryCatch.Try></TryCatch>
+    </TryCatch.Try></TryCatch></TryCatch.Try></TryCatch></TryCatch.Try></TryCatch></TryCatch.Try></TryCatch></TryCatch.Try></TryCatch>
+  </Sequence>
+</Activity>
