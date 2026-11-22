@@ -351,7 +351,10 @@ try {
     Assert ($decisionStyle -match '^rhombus') 'draws the decision as a diamond'
     Assert ($d.Text -notmatch 'amount &gt; 5000') 'leaves the decision condition out by default'
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
-    Assert ($report -match 'RouteToQueue - 1 in Main.xaml') 'report lists the unrecognised activity type'
+    Assert ($report -match 'RouteToQueue \(Demo\.Activities\) - 1, in Main\.xaml') 'report lists the activity from another package, with its package'
+    Assert ($report -match '(?m)^  UiPath packages: \d+ uses? of \d+ activity types?') 'report counts UiPath activities'
+    Assert ($report -match '(?m)^  Workflow Foundation \(part of \.NET\): \d+ uses? of \d+ activity types?') 'report counts Workflow Foundation activities'
+    Assert ($report -notmatch 'not recognised') 'the report no longer calls UiPath''s own activities unrecognised'
     Assert ($report -match 'Approval\\AskManager.xaml - invoked from Main.xaml') 'report lists the missing invoked workflow'
     Assert ($report -match 'layout saved in Studio') 'uses the layout saved in Studio (older ViewState format)'
 
@@ -376,7 +379,10 @@ try {
     $mapEdges = @($map.SelectNodes('.//mxCell[@edge="1"]')).Count
     Assert ($mapEdges -eq 7) "map draws one arrow per caller and callee pair (found $mapEdges)"
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
-    Assert ($report -match 'WarmUpCache - 1 in Framework\\Initialize.xaml') 'report lists the unrecognised activity type'
+    Assert ($report -match 'WarmUpCache \(Acme\.Robotics\.Activities\) - 1, in Framework\\Initialize\.xaml') 'report lists the activity from another package'
+    Assert ($report -match 'ProcessOrders\.xaml \(sequence\): 5 activities not drawn') 'report says how many activities a summary page does not draw'
+    Assert ($report -match '(?m)^Version:  \d+\.\d+\.\d+\r?$') 'report says which version of the converter wrote it'
+    Assert ($report -notmatch '(?m)^  Main\.xaml \(flowchart\):') 'a flowchart that draws all its activities gets no not-drawn line'
     Assert ($report -match 'Steps\\CheckOrder.xaml - invoked from ProcessOrders.xaml') 'report lists the missing workflow'
     Assert ($report -match 'laid out automatically') 'lays out a flowchart with no saved layout'
     Assert ($report -notmatch 'Framework\\ReadConfig.xaml - invoked') 'resolves a path written with forward slashes'
@@ -425,6 +431,84 @@ try {
     Assert-CleanArrows $r.DrawioFiles[0] 'state machine with five parallel transitions and two self-transitions'
     $r = Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = (Join-Path $work 'arrows-proj') }
     Assert-CleanArrows $r.DrawioFiles[0] 'project sample (map and the automatically laid out Main page)' @('Project map', 'Main.xaml')
+
+    # A made-up large project, written here: Main invokes 14 steps; three steps invoke shared
+    # workflows; a chain runs three levels deep and Main also invokes its last level directly; three
+    # workflows are invoked by nothing and invoke nothing. Laid out in one row per level, its map
+    # would be about 3,000 pixels wide.
+    $wide = Join-Path $work 'wide-project'
+    foreach ($sub in @('Steps', 'Shared', 'Deep', 'Tools')) { [void](New-Item -ItemType Directory -Force -Path (Join-Path $wide $sub)) }
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $calls = [ordered]@{ 'Main.xaml' = @('Deep\LevelThree.xaml') }
+    for ($i = 1; $i -le 14; $i++) { $calls['Main.xaml'] += ('Steps\ProcessStep{0:00}.xaml' -f $i) }
+    for ($i = 1; $i -le 14; $i++) { $calls[('Steps\ProcessStep{0:00}.xaml' -f $i)] = @() }
+    $calls['Steps\ProcessStep01.xaml'] = @('Shared\WriteAuditEntry.xaml', 'Deep\LevelTwo.xaml')
+    $calls['Steps\ProcessStep02.xaml'] = @('Shared\WriteAuditEntry.xaml', 'Shared\SendSummaryMail.xaml')
+    $calls['Steps\ProcessStep03.xaml'] = @('Shared\SendSummaryMail.xaml')
+    $calls['Shared\WriteAuditEntry.xaml'] = @()
+    $calls['Shared\SendSummaryMail.xaml'] = @()
+    $calls['Deep\LevelTwo.xaml'] = @('Deep\LevelThree.xaml')
+    $calls['Deep\LevelThree.xaml'] = @()
+    foreach ($t in @('Tools\ResetTestData.xaml', 'Tools\ExportSettings.xaml', 'Tools\CheckEnvironment.xaml')) { $calls[$t] = @() }
+    foreach ($file in $calls.Keys) {
+        $body = ''
+        foreach ($callee in $calls[$file]) { $body += '    <ui:InvokeWorkflowFile DisplayName="Run ' + $callee + '" WorkflowFileName="' + $callee + '" />' + "`n" }
+        $xaml = '<Activity x:Class="Demo" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:ui="http://schemas.uipath.com/workflow/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">' + "`n" +
+            '  <Sequence DisplayName="Demo">' + "`n" + $body + '  </Sequence>' + "`n" + '</Activity>' + "`n"
+        [System.IO.File]::WriteAllText((Join-Path $wide $file), $xaml, $utf8)
+    }
+    [System.IO.File]::WriteAllText((Join-Path $wide 'project.json'), '{ "name": "WideDemo", "main": "Main.xaml" }', $utf8)
+    $pairs = 0
+    foreach ($file in $calls.Keys) { $pairs += @($calls[$file]).Count }
+
+    $r = Invoke-Converter @{ Path = $wide; OutputPath = (Join-Path $work 'wide-out') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $map = $d.Doc.SelectNodes('/mxfile/diagram')[0]
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $boxes = @{}
+    foreach ($c in $map.SelectNodes('mxGraphModel/root/*')) {
+        $info = Get-CellInfo $c
+        if (-not $info.Vertex -or $info.Style -like 'text;*') { continue }
+        $g = $info.Inner.SelectSingleNode('mxGeometry')
+        $boxes[([string]$info.Label -split "`n")[0]] = @{ X = [double]::Parse($g.GetAttribute('x'), $inv); Y = [double]::Parse($g.GetAttribute('y'), $inv); W = [double]::Parse($g.GetAttribute('width'), $inv) }
+    }
+    Assert ($boxes.Count -eq $calls.Count) "large project map draws every workflow once (found $($boxes.Count) of $($calls.Count))"
+    $arrows = @($map.SelectNodes('.//mxCell[@edge="1"]'))
+    Assert ($arrows.Count -eq $pairs) "large project map draws one arrow per caller and callee pair (found $($arrows.Count) of $pairs)"
+    $minX = [double]::MaxValue; $maxX = [double]::MinValue
+    foreach ($b in $boxes.Values) { $minX = [Math]::Min($minX, $b.X); $maxX = [Math]::Max($maxX, $b.X + $b.W) }
+    $outside = 0
+    foreach ($a in $arrows) {
+        foreach ($p in $a.SelectNodes('mxGeometry/Array/mxPoint')) {
+            $px = [double]::Parse($p.GetAttribute('x'), $inv)
+            if ($px -lt $minX - 1 -or $px -gt $maxX + 1) { $outside++ }
+        }
+    }
+    Assert (($maxX - $minX) -le 1800) ("large project map wraps wide rows: {0:0} pixels wide" -f ($maxX - $minX))
+    Assert ($outside -eq 0) "large project map: arrows that pass rows drop between boxes, not round the side ($outside points outside)"
+    $lowestLinked = 0.0
+    foreach ($k in $boxes.Keys) { if ($k -notlike 'Tools\*' -and $boxes[$k].Y -gt $lowestLinked) { $lowestLinked = $boxes[$k].Y } }
+    $toolsBelow = @($boxes.Keys | Where-Object { $_ -like 'Tools\*' -and $boxes[$_].Y -gt $lowestLinked }).Count
+    Assert ($toolsBelow -eq 3) "large project map puts workflows with no arrows below the rest ($toolsBelow of 3)"
+    Assert-CleanArrows $r.DrawioFiles[0] 'large project map' @('Project map')
+    $again = Invoke-Converter @{ Path = $wide; OutputPath = (Join-Path $work 'wide-out-2') }
+    Assert ([System.IO.File]::ReadAllText($again.DrawioFiles[0]) -ceq $d.Text) 'large project map comes out the same every time'
+
+    # Studio layout with crowded labels: arrows and boxes stay as saved; only labels move.
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'crowded-labels.xaml'); OutputPath = (Join-Path $work 'crowded') }
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    Assert ([System.IO.File]::ReadAllText($r.ReportFile) -match 'layout saved in Studio') 'crowded-labels fixture uses the layout saved in Studio'
+    $styleOf = @{}
+    foreach ($c in $d.Doc.SelectNodes('//mxCell[@vertex="1"]')) { $styleOf[$c.GetAttribute('value')] = $c.GetAttribute('style') }
+    Assert ($styleOf['Ready?'] -match 'labelPosition=center;verticalLabelPosition=bottom') 'decision text stays below the diamond when no arrow meets its bottom point'
+    Assert ($styleOf['Checked?'] -match 'labelPosition=right;verticalLabelPosition=bottom') 'decision text moves to the lower right when an arrow meets the bottom point'
+    $labelProblems = @(Get-ArrowProblems $d.Doc.SelectNodes('/mxfile/diagram')[0] | Where-Object { $_ -like 'label*' })
+    Assert ($labelProblems.Count -eq 0) ('labels on side-by-side Studio routes are moved apart' + $(if ($labelProblems.Count) { ' -- ' + ($labelProblems -join '; ') } else { '' }))
+    $moved = @()
+    foreach ($c in $d.Doc.SelectNodes('//mxCell[@edge="1"]')) { if ($c.SelectSingleNode('mxGeometry').GetAttribute('x')) { $moved += $c.GetAttribute('value') } }
+    Assert (($moved -notcontains 'True') -and ($moved -notcontains 'False')) 'labels already in a clear place stay halfway along their arrows'
+    Assert ($moved.Count -eq 1) "only the crowded label is moved (moved: $($moved -join ', '))"
+
     $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'junk-layout.xaml'); OutputPath = (Join-Path $work 'arrows-junk') }
     $d = Test-DrawioStructure $r.DrawioFiles[0]
     Assert ($d.Text -notmatch 'NaN|Infinity|E\+') 'keeps NaN, infinity and huge numbers from a damaged layout out of the diagram'
@@ -444,10 +528,14 @@ try {
     $labels = Get-AllLabels $d.Doc
     Assert ($labels -contains "Read nodes`n[ReadNodes]") 'still draws that activity, as an unrecognised step with its type'
     Assert ($labels -contains 'Set values') 'draws the step that holds the sequence'
+    $checkStyle = ''
+    foreach ($c in $d.Doc.SelectNodes('//mxCell[@value="Check the page is open"]')) { $checkStyle = $c.GetAttribute('style') }
+    Assert ($checkStyle -and $checkStyle -notmatch 'dashed=1') 'draws a UiPath activity step as an ordinary step, not as an unknown one'
     $report = [System.IO.File]::ReadAllText($r.ReportFile)
-    $unknownSection = [regex]::Match($report, '(?ms)^Activity types not recognised.*?(?=\r?\n\r?\n)').Value
-    Assert ($unknownSection -match 'ReadNodes - 1 in property-names\.xaml') 'lists the made-up activity as unrecognised'
-    Assert ($unknownSection -notmatch 'CSharpValue|CSharpReference|AssignOperation|VisualBasic') 'does not list expressions or Multiple Assign items as unrecognised activities'
+    $sourceSection = [regex]::Match($report, '(?ms)^Activities by source.*?(?=\r?\n\r?\n)').Value
+    Assert ($sourceSection -match 'ReadNodes \(Demo\.Activities\) - 1, in property-names\.xaml') 'lists the made-up activity under other packages'
+    Assert ($sourceSection -match 'MultipleAssign \(1\)') 'lists Multiple Assign as a UiPath activity'
+    Assert ($sourceSection -notmatch 'CSharpValue|CSharpReference|AssignOperation|VisualBasic') 'does not count expressions or Multiple Assign items as activities'
 
     # --- Switch cases in every written form -----------------------------------------------------------
     Write-Host "`nSwitch case forms"
@@ -583,7 +671,7 @@ try {
     Assert ($report -match 'Ok\\Link: a link to another folder, not followed') 'report lists the link it did not follow'
     Assert ($report -match 'Page\.xaml: top element is <html>, not <Activity>') 'report says a file is not a workflow'
     Assert ($report -match 'Bare\.xaml \[?\w*\]? ?- state machine') 'draws a file whose top element is itself a state machine'
-    Assert ($report -notmatch '(?m)^  Activity - ') 'never lists the file''s <Activity> wrapper as an unrecognised activity'
+    Assert ($report -notmatch '\bActivity \(\d') 'never counts the file''s <Activity> wrapper as an activity'
 
     # --- Writing: re-runs, read-only files, odd names ------------------------------------------------
     $again = Join-Path $work 'rerun'

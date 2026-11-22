@@ -185,7 +185,8 @@ foreach ($p in $rows) {
         $row.Missing = @(Get-Section $report 'Invoked workflows not found').Count
         $row.Outside = @(Get-Section $report 'Invoked files outside the project folder').Count
         $row.RunTime = @(Get-Section $report 'File names set at run time').Count
-        $row.UnrecognisedTypes = (@(Get-Section $report 'Activity types not recognised') | ForEach-Object { ($_ -split ' - ')[0] } | Sort-Object -Unique) -join ' '
+        # Activity types from other libraries or packages: the lines "Type (package) - n, in ..." under "Activities by source".
+        $row.UnrecognisedTypes = (@(Get-Section $report 'Activities by source') | Where-Object { $_ -match '^\S+ \([^)]*\) - \d+, in ' } | ForEach-Object { ($_ -split ' ')[0] } | Sort-Object -Unique) -join ' '
         $row.Warnings = @(Get-Section $report 'Warnings').Count
         $row.Unreadable = @(Get-Section $report 'Files that could not be read').Count
         $row.NotWorkflows = @(Get-Section $report 'Files that are not workflows').Count

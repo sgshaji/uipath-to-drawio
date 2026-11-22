@@ -13,7 +13,9 @@
           Attributes has an "Attributes" property. The converter must still read the file.
        2. C# projects give every expression element (CSharpValue, CSharpReference) a layout IdRef, and
           Multiple Assign items (AssignOperation) have one too. None of these are activities, so none
-          may be reported as an unrecognised activity type. -->
+          may be counted as one.
+       3. "Check the page is open" uses a UiPath activity (Element Exists, UiElementExists). It comes
+          from a UiPath package, so it must be drawn as an ordinary step, not as an unknown activity. -->
   <Flowchart DisplayName="Property names" sap2010:WorkflowViewState.IdRef="Flowchart_1">
     <Flowchart.StartNode>
       <FlowStep x:Name="__ReferenceID0" sap2010:WorkflowViewState.IdRef="FlowStep_1">
@@ -42,11 +44,17 @@
                 </ui:MultipleAssign.AssignOperations>
               </ui:MultipleAssign>
             </Sequence>
+            <FlowStep.Next>
+              <FlowStep x:Name="__ReferenceID2" sap2010:WorkflowViewState.IdRef="FlowStep_3">
+                <ui:UiElementExists DisplayName="Check the page is open" sap2010:WorkflowViewState.IdRef="UiElementExists_1" />
+              </FlowStep>
+            </FlowStep.Next>
           </FlowStep>
         </FlowStep.Next>
       </FlowStep>
     </Flowchart.StartNode>
     <x:Reference>__ReferenceID0</x:Reference>
     <x:Reference>__ReferenceID1</x:Reference>
+    <x:Reference>__ReferenceID2</x:Reference>
   </Flowchart>
 </Activity>

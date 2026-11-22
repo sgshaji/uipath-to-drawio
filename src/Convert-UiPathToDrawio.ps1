@@ -80,39 +80,35 @@ $script:StructuralNames = @(
     'CSharpValue', 'CSharpReference', 'VisualBasicValue', 'VisualBasicReference', 'Literal', 'AssignOperation'
 )
 
-# Activity types the converter knows. Anything else is listed in the report as not recognised.
-$script:KnownActivities = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-@(
-    # Workflow structure
-    'Sequence', 'Flowchart', 'FlowDecision', 'FlowSwitch', 'StateMachine', 'InvokeWorkflowFile',
-    'If', 'IfElseIf', 'Switch', 'TryCatch', 'Throw', 'Rethrow', 'TerminateWorkflow', 'While', 'DoWhile',
-    'ForEach', 'ParallelForEach', 'ForEachRow', 'InterruptibleWhile', 'InterruptibleDoWhile', 'Parallel',
-    'Pick', 'PickBranch', 'Break', 'Continue', 'RetryScope', 'Delay', 'Assign', 'MultipleAssign',
-    'Comment', 'CommentOut', 'LogMessage', 'WriteLine', 'AddLogFields', 'RemoveLogFields', 'ShouldStop',
-    'InvokeCode', 'InvokeMethod', 'InvokeProcess', 'AddToCollection', 'RemoveFromCollection',
-    'ClearCollection', 'ExistsInCollection', 'MessageBox', 'InputDialog', 'KillProcess', 'StartProcess',
-    # Files and data
-    'ReadTextFile', 'WriteTextFile', 'AppendLine', 'CopyFile', 'MoveFile', 'DeleteFileX', 'PathExists',
-    'CreateDirectory', 'BuildDataTable', 'AddDataRow', 'RemoveDataRow', 'FilterDataTable', 'SortDataTable',
-    'LookupDataTable', 'JoinDataTables', 'MergeDataTable', 'OutputDataTable', 'ClearDataTable',
-    'GenerateDataTable', 'DeserializeJson', 'SerializeJson', 'HttpClient',
-    'ExcelApplicationScope', 'ExcelReadRange', 'ExcelWriteRange', 'ReadRange', 'WriteRange', 'ReadCell',
-    'WriteCell', 'ExcelProcessScopeX', 'UseExcelFile',
-    # Orchestrator
-    'GetTransactionItem', 'SetTransactionStatus', 'AddQueueItem', 'AddTransactionItem', 'GetQueueItems',
-    'GetAsset', 'GetRobotAsset', 'GetCredential', 'GetRobotCredential', 'SetAsset',
-    # UI automation
-    'OpenApplication', 'OpenBrowser', 'CloseApplication', 'CloseWindow', 'CloseTab', 'AttachWindow',
-    'AttachBrowser', 'NavigateTo', 'UseBrowser', 'UseApplicationBrowser', 'NApplicationCard', 'Click',
-    'DoubleClick', 'TypeInto', 'TypeSecureText', 'GetText', 'SetText', 'GetAttribute', 'ElementExists',
-    'WaitUiElementAppear', 'WaitUiElementVanish', 'FindElement', 'SendHotkey', 'SelectItem', 'Check',
-    'Hover', 'TakeScreenshot', 'HighlightElement', 'NClick', 'NTypeInto', 'NGetText', 'NCheckState',
-    'NHover', 'NSelectItem', 'NKeyboardShortcuts', 'NCheck', 'NFindElement', 'NGoToUrl',
-    'NNavigateBrowser', 'NCloseApplication',
-    # Mail
-    'SendMail', 'SendOutlookMailMessage', 'GetOutlookMailMessages', 'GetIMAPMailMessages',
-    'SendSmtpMailMessage'
-) | ForEach-Object { [void]$script:KnownActivities.Add($_) }
+# Where an activity comes from, judged by its XML namespace: UiPath's own packages, Windows Workflow
+# Foundation (part of .NET), or anything else: the project's own libraries or third-party packages.
+# The converter does not interpret what any activity does; this only tells the reader where it is from.
+function Get-ActivitySource {
+    param([string]$Namespace)
+    if ($Namespace -match '^http://schemas\.uipath\.com/' -or $Namespace -match '^clr-namespace:UiPath[.;]' -or $Namespace -match ';\s*assembly=UiPath\.') { return 'UiPath' }
+    if ($Namespace -eq 'http://schemas.microsoft.com/netfx/2009/xaml/activities' -or $Namespace -match '^clr-namespace:(System\.Activities|Microsoft\.VisualBasic\.Activities|Microsoft\.CSharp\.Activities)[.;]') { return 'WorkflowFoundation' }
+    return 'Other'
+}
+
+function Get-ActivityPackage {
+    # The package (assembly) an activity comes from, as named in its namespace.
+    param([string]$Namespace)
+    $m = [regex]::Match($Namespace, ';\s*assembly=([^;]+)')
+    if ($m.Success) { return $m.Groups[1].Value.Trim() }
+    if ([string]::IsNullOrEmpty($Namespace)) { return '(no namespace)' }
+    return $Namespace
+}
+
+function Test-CountsAsActivity {
+    # The elements counted as activities: real activities carry a display name or a layout ID;
+    # property elements, XAML markup, expressions and structural elements do not count.
+    param($Element)
+    $ln = $Element.get_LocalName()
+    if ($ln.Contains('.')) { return $false }
+    if ($script:NonActivityNs -contains $Element.get_NamespaceURI()) { return $false }
+    if ($script:StructuralNames -contains $ln) { return $false }
+    return ($null -ne (Get-Attr $Element 'DisplayName') -or $null -ne (Get-Attr $Element 'WorkflowViewState.IdRef' 'Any'))
+}
 
 # draw.io styles. Labels are plain text (no html=1), so they need no HTML escaping.
 $script:Style = @{
@@ -133,6 +129,7 @@ $script:Style = @{
     Decision       = 'rhombus;fillColor=#fff2cc;strokeColor=#d6b656;'
     Switch         = 'rhombus;fillColor=#ffe6cc;strokeColor=#d79b00;'
     LabelBelow     = 'labelPosition=center;verticalLabelPosition=bottom;align=center;verticalAlign=top;labelBackgroundColor=#ffffff;'
+    LabelBelowRight = 'labelPosition=right;verticalLabelPosition=bottom;align=left;verticalAlign=top;labelBackgroundColor=#ffffff;'
     Row            = 'rounded=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;align=left;spacingLeft=6;'
     RowMissing     = 'rounded=1;dashed=1;fillColor=#ffffff;strokeColor=#b85450;fontColor=#b85450;fontSize=11;align=left;spacingLeft=6;'
     RowComputed    = 'rounded=1;dashed=1;fillColor=#ffffff;strokeColor=#999999;fontColor=#666666;fontSize=11;align=left;spacingLeft=6;'
@@ -146,6 +143,10 @@ $script:Style = @{
 $script:CardHeader = 28
 $script:RowHeight = 22
 $script:RowGap = 4
+# The converter's version, shown in each conversion report so a report can be matched to a release.
+$script:ToolVersion = '0.1.0'
+# A row of the project map wider than this (in pixels) is wrapped onto several rows.
+$script:MapRowWidth = 1600
 
 # ---------------------------------------------------------------------------
 # Reading XAML. Elements are matched by local name, never by namespace prefix.
@@ -546,8 +547,9 @@ function Read-Workflow {
         Kind          = 'Unknown'
         KindLabel     = 'unknown'
         Invokes       = (New-Object System.Collections.Generic.List[object])
-        Unknown       = @{}
-        ActivityCount = 0
+        Activities    = @{}         # "source|type" -> source, type, package and how often it is used
+        ActivityCount = 0           # activities below the top-level one
+        NotDrawn      = 0           # how many of those the diagram does not show
         Summary       = ''
         IsMain        = $false
         TopElement    = ''          # for a file that is not a workflow: what its top element is
@@ -574,7 +576,7 @@ function Read-Workflow {
             foreach ($impl in (Get-ChildElement $top 'Activity.Implementation')) { $wf.Root = Get-ActivityChild $impl }
         }
     }
-    elseif ($script:KnownActivities.Contains($top.get_LocalName()) -and $script:NonActivityNs -notcontains $top.get_NamespaceURI()) {
+    elseif ((Get-ActivitySource $top.get_NamespaceURI()) -ne 'Other') {
         $wf.Root = $top
     }
     else {
@@ -599,18 +601,18 @@ function Read-Workflow {
         $wf.Invokes.Add((Get-InvokeInfo $inv $ProjectRoot))
     }
 
-    # Inventory of activity types, to report the ones the converter doesn't recognise.
+    # Inventory of activities, by type and source, for the report.
     foreach ($e in $wf.Doc.SelectNodes('//*')) {
         if ((Test-SameNode $e $top) -and $top.get_LocalName() -eq 'Activity') { continue }   # the file's wrapper, not an activity
-        $ln = $e.get_LocalName()
-        if ($ln.Contains('.')) { continue }
-        if ($script:NonActivityNs -contains $e.get_NamespaceURI()) { continue }
-        if ($script:StructuralNames -contains $ln) { continue }
-        if ($null -eq (Get-Attr $e 'DisplayName') -and $null -eq (Get-Attr $e 'WorkflowViewState.IdRef' 'Any')) { continue }
-        $wf.ActivityCount++
-        if (-not $script:KnownActivities.Contains($ln)) {
-            if ($wf.Unknown.ContainsKey($ln)) { $wf.Unknown[$ln]++ } else { $wf.Unknown[$ln] = 1 }
+        if (-not (Test-CountsAsActivity $e)) { continue }
+        $ns = $e.get_NamespaceURI()
+        $source = Get-ActivitySource $ns
+        $key = $source + '|' + $e.get_LocalName()
+        if (-not $wf.Activities.ContainsKey($key)) {
+            $wf.Activities[$key] = @{ Source = $source; Type = $e.get_LocalName(); Package = (Get-ActivityPackage $ns); Count = 0 }
         }
+        $wf.Activities[$key].Count++
+        if (-not (Test-SameNode $e $wf.Root)) { $wf.ActivityCount++ }     # activities below the top-level one
     }
     return $wf
 }
@@ -888,7 +890,8 @@ function Get-FlowchartGraph {
                     if ($row.Style -eq $script:Style.RowComputed) { $node.Style = $script:Style.InvokeComputed }
                     $node.Link = $row.Link
                 }
-                elseif (-not $script:KnownActivities.Contains($act.get_LocalName())) {
+                elseif ((Get-ActivitySource $act.get_NamespaceURI()) -eq 'Other') {
+                    # From the project's own library or a third-party package: shown with its type, dashed.
                     $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n[" + $act.get_LocalName() + ']') $script:Style.Unknown $e
                 }
                 else {
@@ -1016,11 +1019,16 @@ function Get-FlowchartGraph {
     }
 
     $steps = 0; $decisions = 0; $switches = 0
+    $drawn = 0      # activities the diagram shows: each step's own activity, each decision and switch
     foreach ($e in $elements) {
-        switch ($e.get_LocalName()) { 'FlowStep' { $steps++ } 'FlowDecision' { $decisions++ } 'FlowSwitch' { $switches++ } }
+        switch ($e.get_LocalName()) {
+            'FlowStep' { $steps++; $act = Get-ActivityChild $e; if ($null -ne $act -and (Test-CountsAsActivity $act)) { $drawn++ } }
+            'FlowDecision' { $decisions++; if (Test-CountsAsActivity $e) { $drawn++ } }
+            'FlowSwitch' { $switches++; if (Test-CountsAsActivity $e) { $drawn++ } }
+        }
     }
     $summary = (Format-Count $steps 'step' 'steps') + ', ' + (Format-Count $decisions 'decision' 'decisions') + ', ' + (Format-Count $switches 'switch' 'switches')
-    return @{ Nodes = $nodes; Edges = $edges; StartKeys = @('start'); Warnings = $warnings; Summary = $summary }
+    return @{ Nodes = $nodes; Edges = $edges; StartKeys = @('start'); Warnings = $warnings; Summary = $summary; DrawnActivities = $drawn }
 }
 
 # ---------------------------------------------------------------------------
@@ -1171,14 +1179,93 @@ function Set-StudioLayout {
             $points.Add(@(($p[0] * $sx + $offsetX), ($p[1] * $sy + $offsetY)))
         }
         $e.Points = $points
+        $path = New-Object System.Collections.Generic.List[object]
+        foreach ($p in $e.StudioPoints) { $path.Add(@(($p[0] * $sx + $offsetX), ($p[1] * $sy + $offsetY))) }
+        $e.Path = $path
     }
+
+    # A decision's text goes below the diamond, as in Studio. Where an arrow meets the diamond's
+    # bottom point it would run straight through that text, so the text moves to the lower right.
+    foreach ($n in $nodes) {
+        if ($n.Kind -ne 'Decision' -and $n.Kind -ne 'Switch') { continue }
+        $n.LabelSide = 'Below'
+        foreach ($e in $Graph.Edges) {
+            if ($null -eq $e.Path) { continue }
+            $ends = @()
+            if ($e.From -eq $n.Key) { $ends += , $e.Path[0] }
+            if ($e.To -eq $n.Key) { $ends += , $e.Path[$e.Path.Count - 1] }
+            foreach ($pt in $ends) {
+                if ([Math]::Abs($pt[0] - ($n.X + $n.W / 2)) -le $n.W * 0.15 -and $pt[1] -ge $n.Y + $n.H * 0.9) { $n.LabelSide = 'BelowRight' }
+            }
+        }
+        if ($n.LabelSide -eq 'BelowRight') { $n.Style = $n.Style.Replace($script:Style.LabelBelow, $script:Style.LabelBelowRight) }
+    }
+    Set-ClearLabelPlaces $Graph
     return @{ X = $sx; Y = $sy }
+}
+
+function Set-ClearLabelPlaces {
+    # Studio layout only. draw.io puts an arrow's label halfway along it. Where Studio's routes run
+    # close together, labels can land on each other, on a box or on a decision's text. Each label that
+    # would is moved along its own arrow to the first clear place, trying points further and further
+    # from the middle. Arrows and boxes stay where Studio put them, and a label already in a clear
+    # place is left alone.
+    param($Graph)
+    $taken = New-Object System.Collections.Generic.List[object]
+    foreach ($n in $Graph.Nodes) {
+        $taken.Add(@($n.X, $n.Y, $n.W, $n.H))
+        if (($n.Kind -eq 'Decision' -or $n.Kind -eq 'Switch') -and -not [string]::IsNullOrEmpty($n.Label)) {
+            $t = Get-TextSize $n.Label 7 16
+            if ($n.LabelSide -eq 'BelowRight') { $taken.Add(@(($n.X + $n.W), ($n.Y + $n.H), $t.W, $t.H)) }
+            else { $taken.Add(@(($n.X + ($n.W - $t.W) / 2), ($n.Y + $n.H), $t.W, $t.H)) }
+        }
+    }
+    $fractions = @(0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82)
+    foreach ($e in $Graph.Edges) {
+        if ([string]::IsNullOrEmpty($e.Label) -or $null -eq $e.Path -or $e.Path.Count -lt 2) { continue }
+        $size = Get-TextSize $e.Label 6.6 14
+        $w = $size.W + 6
+        $h = $size.H + 2
+        $total = Get-PolylineLength $e.Path
+        if ($total -le 0) { continue }
+        $best = $null
+        $bestOverlap = [double]::MaxValue
+        foreach ($f in $fractions) {
+            # The point f of the way along the path.
+            $want = $f * $total
+            $cx = $e.Path[0][0]; $cy = $e.Path[0][1]
+            for ($i = 1; $i -lt $e.Path.Count; $i++) {
+                $a = $e.Path[$i - 1]; $b = $e.Path[$i]
+                $len = Get-PolylineLength @($a, $b)
+                if ($want -le $len -or $i -eq $e.Path.Count - 1) {
+                    $k = 0.0
+                    if ($len -gt 0) { $k = [Math]::Min(1.0, $want / $len) }
+                    $cx = $a[0] + ($b[0] - $a[0]) * $k
+                    $cy = $a[1] + ($b[1] - $a[1]) * $k
+                    break
+                }
+                $want -= $len
+            }
+            $rect = @(($cx - $w / 2), ($cy - $h / 2), $w, $h)
+            $overlap = 0.0
+            foreach ($o in $taken) {
+                $ox = [Math]::Min($rect[0] + $rect[2], $o[0] + $o[2]) - [Math]::Max($rect[0], $o[0])
+                $oy = [Math]::Min($rect[1] + $rect[3], $o[1] + $o[3]) - [Math]::Max($rect[1], $o[1])
+                if ($ox -gt 0 -and $oy -gt 0) { $overlap += $ox * $oy }
+            }
+            if ($overlap -lt $bestOverlap) { $bestOverlap = $overlap; $best = @{ F = $f; Rect = $rect } }
+            if ($overlap -eq 0) { break }
+        }
+        if ($best.F -ne 0.5) { $e.LabelX = 2 * $best.F - 1 }
+        $taken.Add($best.Rect)
+    }
 }
 
 function Set-AutoLayout {
     # Simple layered layout, top to bottom. Layers come from the longest path from the start
     # (ignoring edges that loop back); nodes in a layer keep the order they were reached in.
-    param($Graph, [double]$Left, [double]$Top, [double]$GapX = 50, [double]$GapY = 70)
+    # MaxRowWidth above 0 turns on the compact form used for project maps (see below).
+    param($Graph, [double]$Left, [double]$Top, [double]$GapX = 50, [double]$GapY = 70, [double]$MaxRowWidth = 0)
     $nodes = $Graph.Nodes
     $byKey = @{}
     $out = @{}
@@ -1238,15 +1325,112 @@ function Set-AutoLayout {
         }
     }
 
+    # Compact form, for project maps of large projects, where one layer can hold a dozen or more
+    # workflows and the page grows several thousand pixels wide:
+    #   1. boxes with no arrows at all go to rows of their own at the bottom;
+    #   2. a layer wider than MaxRowWidth is wrapped onto several rows. Boxes that lead nowhere go
+    #      first, so the boxes whose arrows carry on down sit in the last row, nearest their targets;
+    #   3. an arrow that has to pass rows on its way down drops through a gap kept free in each of
+    #      those rows, instead of going round the side. Arrows from one box share its gaps, like the
+    #      trunk of an organisation chart. (A gap is an invisible node of no width; each arrow is
+    #      laid out as a run of one-row hops and the hops are joined up again at the end.)
+    # Everything stays a fixed function of the input, so the same file always gives the same page.
+    $compact = ($MaxRowWidth -gt 0)
+    if ($compact) {
+        $linked = @{}
+        $fin = @{}
+        $fout = @{}
+        foreach ($n in $nodes) { $fin[$n.Key] = 0; $fout[$n.Key] = 0 }
+        foreach ($e in $Graph.Edges) {
+            if (-not $byKey.ContainsKey($e.From) -or -not $byKey.ContainsKey($e.To)) { continue }
+            $linked[$e.From] = $true
+            $linked[$e.To] = $true
+            if (-not $e.Back) { $fout[$e.From]++; $fin[$e.To]++ }
+        }
+        if ($linked.Count -gt 0) {
+            $lowest = 0
+            foreach ($n in $nodes) { if ($linked.ContainsKey($n.Key) -and $layer[$n.Key] -gt $lowest) { $lowest = $layer[$n.Key] } }
+            foreach ($n in $nodes) { if (-not $linked.ContainsKey($n.Key)) { $layer[$n.Key] = $lowest + 1 } }
+        }
+        $deepest = 0
+        foreach ($n in $nodes) { if ($layer[$n.Key] -gt $deepest) { $deepest = $layer[$n.Key] } }
+        $newLayer = @{}
+        $shift = 0
+        for ($l = 0; $l -le $deepest; $l++) {
+            $members = @($nodes | Where-Object { $layer[$_.Key] -eq $l } | Sort-Object { $discovery[$_.Key] })
+            if ($members.Count -eq 0) { $shift--; continue }
+            $width = 0.0
+            foreach ($n in $members) { $width += $n.W + $GapX }
+            $rowCount = [int][Math]::Ceiling($width / $MaxRowWidth)
+            if ($rowCount -gt 1) {
+                $members = @($members | Sort-Object { $fout[$_.Key] - $fin[$_.Key] }, { $discovery[$_.Key] })
+            }
+            else { $rowCount = 1 }
+            $perRow = [int][Math]::Ceiling($members.Count / $rowCount)
+            for ($i = 0; $i -lt $members.Count; $i++) {
+                $newLayer[$members[$i].Key] = $l + $shift + [int][Math]::Floor($i / $perRow)
+            }
+            $shift += [int][Math]::Ceiling($members.Count / $perRow) - 1
+        }
+        foreach ($n in $nodes) { $layer[$n.Key] = $newLayer[$n.Key] }
+    }
+
+    # The arrows the router lays out: the graph's own, with long ones split into hops in compact form.
+    $work = New-Object System.Collections.Generic.List[object]
+    $chains = New-Object System.Collections.Generic.List[object]
+    $allNodes = New-Object System.Collections.Generic.List[object]
+    foreach ($n in $nodes) { $allNodes.Add($n) }
+    $above = @{}       # gap key -> the box or gap directly above it
+    $hopByKey = @{}
+    foreach ($e in $Graph.Edges) {
+        $long = ($compact -and $byKey.ContainsKey($e.From) -and $byKey.ContainsKey($e.To) -and -not $e.Back -and $layer[$e.To] -gt $layer[$e.From] + 1)
+        if (-not $long) { $work.Add($e); continue }
+        $hops = New-Object System.Collections.Generic.List[object]
+        $prev = $e.From
+        for ($l = $layer[$e.From] + 1; $l -lt $layer[$e.To]; $l++) {
+            $gapKey = '|gap|' + $e.From + '|' + $l
+            if (-not $byKey.ContainsKey($gapKey)) {
+                $gap = New-Node $gapKey 'Gap' '' ''
+                $byKey[$gapKey] = $gap
+                $layer[$gapKey] = $l
+                $above[$gapKey] = $prev
+                $discovery[$gapKey] = $discovery.Count
+                $allNodes.Add($gap)
+                $hop = New-Edge $prev $gapKey ''
+                $hopByKey[$gapKey] = $hop
+                $work.Add($hop)
+            }
+            $hops.Add($hopByKey[$gapKey])
+            $prev = $gapKey
+        }
+        $hop = New-Edge $prev $e.To $e.Label
+        $work.Add($hop)
+        $hops.Add($hop)
+        $chains.Add(@{ Edge = $e; Hops = $hops })
+    }
+    $nodes = $allNodes
+
     $maxLayer = 0
     foreach ($n in $nodes) { if ($layer[$n.Key] -gt $maxLayer) { $maxLayer = $layer[$n.Key] } }
     # Group the nodes into layers in one pass; in each layer, keep the order they were reached in.
+    # A gap goes at the same relative place across its row as the box or gap above it.
     $byLayer = @{}
     for ($l = 0; $l -le $maxLayer; $l++) { $byLayer[$l] = New-Object System.Collections.Generic.List[object] }
     foreach ($n in $nodes) { $byLayer[$layer[$n.Key]].Add($n) }
     $rows = New-Object System.Collections.Generic.List[object]
+    $place = @{}
     for ($l = 0; $l -le $maxLayer; $l++) {
-        $rows.Add(@($byLayer[$l] | Sort-Object { $discovery[$_.Key] }))
+        $real = @($byLayer[$l] | Where-Object { $_.Kind -ne 'Gap' } | Sort-Object { $discovery[$_.Key] })
+        $gaps = @($byLayer[$l] | Where-Object { $_.Kind -eq 'Gap' })
+        $row = $real
+        if ($gaps.Count -gt 0) {
+            $items = New-Object System.Collections.Generic.List[object]
+            for ($i = 0; $i -lt $real.Count; $i++) { $items.Add(@{ Node = $real[$i]; At = ($i + 0.5) / $real.Count; Tie = 0; Seq = $i }) }
+            foreach ($g in $gaps) { $items.Add(@{ Node = $g; At = $place[$above[$g.Key]]; Tie = 1; Seq = $discovery[$g.Key] }) }
+            $row = @($items | Sort-Object { $_.At }, { $_.Tie }, { $_.Seq } | ForEach-Object { $_.Node })
+        }
+        for ($i = 0; $i -lt $row.Count; $i++) { $place[$row[$i].Key] = ($i + 0.5) / $row.Count }
+        $rows.Add($row)
     }
 
     # Across: each layer centred under the widest one.
@@ -1275,7 +1459,7 @@ function Set-AutoLayout {
     # different points, so no two arrows lie on top of each other. A label sits on the last stretch,
     # just above the box its arrow leads to; labels arriving at one box are stacked.
     $valid = New-Object System.Collections.Generic.List[object]
-    foreach ($e in $Graph.Edges) {
+    foreach ($e in $work) {
         if (-not $byKey.ContainsKey($e.From) -or -not $byKey.ContainsKey($e.To)) { continue }
         $ls = $layer[$e.From]
         $lt = $layer[$e.To]
@@ -1462,6 +1646,41 @@ function Set-AutoLayout {
             # draw.io places a label at (x + 1) / 2 of the way along the arrow, with x from -1 to 1.
             $e.LabelX = 2 * $labelAt / $total - 1
         }
+        $e.Poly = $poly
+        $e.LabelAt = $labelAt
+    }
+
+    # Compact form: join each long arrow's hops into one path. A point where two hops meet, or where
+    # the path just carries straight on, is dropped.
+    foreach ($c in $chains) {
+        $e = $c.Edge
+        $joined = New-Object System.Collections.Generic.List[object]
+        $before = 0.0
+        for ($h = 0; $h -lt $c.Hops.Count; $h++) {
+            $hop = $c.Hops[$h]
+            if ($h -lt $c.Hops.Count - 1) { $before += Get-PolylineLength $hop.Poly }
+            foreach ($pt in $hop.Poly) {
+                if ($joined.Count -gt 0) {
+                    $prev = $joined[$joined.Count - 1]
+                    if ([Math]::Abs($prev[0] - $pt[0]) -lt 0.01 -and [Math]::Abs($prev[1] - $pt[1]) -lt 0.01) { continue }
+                }
+                if ($joined.Count -ge 2) {
+                    $a = $joined[$joined.Count - 2]
+                    $b = $joined[$joined.Count - 1]
+                    $straight = (([Math]::Abs($a[0] - $b[0]) -lt 0.01 -and [Math]::Abs($b[0] - $pt[0]) -lt 0.01) -or ([Math]::Abs($a[1] - $b[1]) -lt 0.01 -and [Math]::Abs($b[1] - $pt[1]) -lt 0.01))
+                    if ($straight) { $joined.RemoveAt($joined.Count - 1) }
+                }
+                $joined.Add($pt)
+            }
+        }
+        $last = $c.Hops[$c.Hops.Count - 1]
+        $e.Route = 'Down'
+        $e.Style = $script:Style.Edge + 'edgeStyle=none;exitX=0.5;exitY=1;entryX=' + (Format-Number $last.EntryFrac) + ';entryY=0;exitDx=0;exitDy=0;entryDx=0;entryDy=0;'
+        $points = New-Object System.Collections.Generic.List[object]
+        for ($p = 1; $p -lt $joined.Count - 1; $p++) { $points.Add($joined[$p]) }
+        $e.Points = $points
+        $total = Get-PolylineLength $joined
+        if (-not [string]::IsNullOrEmpty($e.Label) -and $total -gt 0) { $e.LabelX = 2 * ($before + $last.LabelAt) / $total - 1 }
     }
 }
 
@@ -1675,6 +1894,10 @@ function New-WorkflowPage {
             $layoutText = 'no saved layout for every element, so laid out automatically'
         }
         Add-GraphToPage $page $graph
+        # A state machine draws none of the activities inside its states; a flowchart draws each step's own activity.
+        $drawnActivities = 0
+        if ($graph.ContainsKey('DrawnActivities')) { $drawnActivities = $graph.DrawnActivities }
+        $Workflow.NotDrawn = [Math]::Max(0, $Workflow.ActivityCount - $drawnActivities)
         $Workflow.Summary = $Workflow.KindLabel + ': ' + $graph.Summary + '. Layout: ' + $layoutText + '.'
         foreach ($w in $graph.Warnings) { $Context.Warnings.Add($Workflow.Rel + ': ' + $w) }
         return $page
@@ -1694,6 +1917,7 @@ function New-WorkflowPage {
     if ($null -ne $Workflow.Root) { $kind = $Workflow.KindLabel }
     $note = 'Version 1 does not draw the steps inside a ' + $kind + '. This page lists the workflows it invokes.'
     [void](Add-Vertex $page $note $script:Style.Note $left ($top + $size.H + 16) 600 20)
+    $Workflow.NotDrawn = $Workflow.ActivityCount
     $Workflow.Summary = $Workflow.KindLabel + ': summary page only (' + (Format-Count $Workflow.Invokes.Count 'invoked workflow' 'invoked workflows') + ' listed).'
     return $page
 }
@@ -1778,7 +2002,7 @@ function New-ProjectMapPage {
     foreach ($wf in $Workflows) { if ($wf.IsMain) { $startKeys.Add($nodeByKey[$wf.Key].Key) } }
     foreach ($n in $nodes) { if (-not $incoming.ContainsKey($n.Key)) { $startKeys.Add($n.Key) } }
     $graph = @{ Nodes = $nodes; Edges = $edges; StartKeys = $startKeys }
-    Set-AutoLayout $graph 40 90 40 60
+    Set-AutoLayout $graph 40 90 40 60 -MaxRowWidth $script:MapRowWidth
     Add-GraphToPage $page $graph
     return $page
 }
@@ -1801,6 +2025,7 @@ function Get-ReportText {
     [void]$sb.Append('Input:    ' + (Split-Path -Leaf $InputPath) + $nl)
     if ($ProjectName) { [void]$sb.Append('Project:  ' + $ProjectName + $nl) }
     foreach ($f in $OutputFiles) { [void]$sb.Append('Output:   ' + (Split-Path -Leaf $f) + $nl) }
+    [void]$sb.Append('Version:  ' + $script:ToolVersion + $nl)
     [void]$sb.Append('Created:  ' + (Get-Date).ToString('yyyy-MM-dd HH:mm', $script:Invariant) + $nl)
     if ($Context.IncludeDetails) {
         [void]$sb.Append('Details:  included (conditions, expressions and run-time file names are shown)' + $nl)
@@ -1819,7 +2044,7 @@ function Get-ReportText {
     $missing = New-Object System.Collections.Generic.List[string]
     $computed = New-Object System.Collections.Generic.List[string]
     $outside = New-Object System.Collections.Generic.List[string]
-    $unknown = New-Object System.Collections.Generic.List[string]
+    $bySource = @{}     # "source|type" -> totals across all workflows
     $unread = New-Object System.Collections.Generic.List[string]
     $notDrawn = New-Object System.Collections.Generic.List[string]
     foreach ($wf in $Workflows) {
@@ -1839,11 +2064,17 @@ function Get-ReportText {
                 if (-not $missing.Contains($line)) { $missing.Add($line) }
             }
         }
-        foreach ($k in ($wf.Unknown.Keys | Sort-Object)) {
-            $unknown.Add('  ' + $k + ' - ' + $wf.Unknown[$k] + ' in ' + $wf.Rel)
+        foreach ($a in $wf.Activities.Values) {
+            $key = $a.Source + '|' + $a.Type
+            if (-not $bySource.ContainsKey($key)) { $bySource[$key] = @{ Source = $a.Source; Type = $a.Type; Packages = @{}; Files = New-Object System.Collections.Generic.List[string]; Count = 0 } }
+            $bySource[$key].Count += $a.Count
+            $bySource[$key].Packages[$a.Package] = $true
+            if (-not $bySource[$key].Files.Contains($wf.Rel)) { $bySource[$key].Files.Add($wf.Rel) }
         }
-        if ($wf.Kind -eq 'Other') { $notDrawn.Add('  ' + $wf.Rel + ' (' + $wf.KindLabel + '): steps not drawn; the page lists the workflows it invokes.') }
-        if ($wf.Kind -eq 'StateMachine') { $notDrawn.Add('  ' + $wf.Rel + ': activities inside states are not drawn; each state lists the workflows it invokes.') }
+        $activities = Format-Count $wf.NotDrawn 'activity' 'activities'
+        if ($wf.Kind -eq 'Other') { $notDrawn.Add('  ' + $wf.Rel + ' (' + $wf.KindLabel + '): ' + $activities + ' not drawn; the page lists the workflows it invokes.') }
+        if ($wf.Kind -eq 'StateMachine' -and $wf.NotDrawn -gt 0) { $notDrawn.Add('  ' + $wf.Rel + ' (state machine): ' + $activities + ' inside states not drawn; each state lists the workflows it invokes.') }
+        if ($wf.Kind -eq 'Flowchart' -and $wf.NotDrawn -gt 0) { $notDrawn.Add('  ' + $wf.Rel + ' (flowchart): ' + $activities + ' inside steps not drawn; a step holding a sequence lists the workflows it invokes.') }
     }
 
     Add-Heading $sb ('Invoked workflows not found (' + $missing.Count + ')')
@@ -1858,9 +2089,41 @@ function Get-ReportText {
     Add-Heading $sb ('File names set at run time, so not linked (' + $computed.Count + ')')
     if ($computed.Count -eq 0) { [void]$sb.Append('  None' + $nl) } else { foreach ($l in $computed) { [void]$sb.Append($l + $nl) } }
 
-    Add-Heading $sb ('Activity types not recognised (' + $unknown.Count + ')')
-    [void]$sb.Append('  Where these appear as a flowchart step they are drawn as a plain dashed box with the type name.' + $nl)
-    if ($unknown.Count -eq 0) { [void]$sb.Append('  None' + $nl) } else { foreach ($l in $unknown) { [void]$sb.Append($l + $nl) } }
+    Add-Heading $sb 'Activities by source'
+    [void]$sb.Append('  Activities are grouped by the package they come from. The converter does not interpret what any' + $nl)
+    [void]$sb.Append('  activity does. Counted: activities with a display name or a layout ID.' + $nl)
+    $sourceNames = [ordered]@{ UiPath = 'UiPath packages'; WorkflowFoundation = 'Workflow Foundation (part of .NET)'; Other = 'Other libraries and packages' }
+    foreach ($source in $sourceNames.Keys) {
+        $entries = @($bySource.Values | Where-Object { $_.Source -eq $source } | Sort-Object @{ Expression = { -$_.Count } }, @{ Expression = { $_.Type } })
+        $uses = 0
+        foreach ($e in $entries) { $uses += $e.Count }
+        [void]$sb.Append('  ' + $sourceNames[$source] + ': ' + (Format-Count $uses 'use' 'uses') + ' of ' + (Format-Count $entries.Count 'activity type' 'activity types') + $nl)
+        if ($entries.Count -eq 0) { continue }
+        if ($source -eq 'Other') {
+            # Listed one by one: these come from the project's own libraries or from third-party packages,
+            # and are the activities the converter knows least about.
+            [void]$sb.Append('    From the project''s own libraries or third-party packages. Flowchart steps using them are drawn' + $nl)
+            [void]$sb.Append('    as dashed boxes showing the activity type.' + $nl)
+            foreach ($e in $entries) {
+                $packages = (@($e.Packages.Keys) | Sort-Object) -join ', '
+                # At most five file names, so a type used across a large project stays on one readable line.
+                $files = @($e.Files)
+                $where = ($files | Select-Object -First 5) -join ', '
+                if ($files.Count -gt 5) { $where += ' and ' + ($files.Count - 5) + ' more' }
+                [void]$sb.Append('    ' + $e.Type + ' (' + $packages + ') - ' + $e.Count + ', in ' + $where + $nl)
+            }
+        }
+        else {
+            # A compact list of every type and how often it is used, wrapped at about 100 characters.
+            $line = '    '
+            foreach ($e in $entries) {
+                $item = $e.Type + ' (' + $e.Count + ')'
+                if ($line.Length -gt 4 -and ($line.Length + $item.Length + 2) -gt 100) { [void]$sb.Append($line.TrimEnd(',', ' ') + $nl); $line = '    ' }
+                $line += $item + ', '
+            }
+            [void]$sb.Append($line.TrimEnd(',', ' ') + $nl)
+        }
+    }
 
     Add-Heading $sb ('Not drawn in version 1')
     if ($notDrawn.Count -eq 0) { [void]$sb.Append('  Nothing' + $nl) } else { foreach ($l in $notDrawn) { [void]$sb.Append($l + $nl) } }
@@ -2191,10 +2454,10 @@ catch {
 
 foreach ($f in $outputFiles) { Write-Host ('Wrote ' + $f) }
 Write-Host ('Wrote ' + $reportPath)
-$unknownTotal = 0
-foreach ($wf in $workflows) { $unknownTotal += $wf.Unknown.Count }
-if ($context.Warnings.Count -gt 0 -or $unknownTotal -gt 0) {
-    Write-Host ('See the report for ' + $context.Warnings.Count + ' warning(s) and ' + $unknownTotal + ' activity type(s) not recognised.')
+$otherTypes = @{}
+foreach ($wf in $workflows) { foreach ($a in $wf.Activities.Values) { if ($a.Source -eq 'Other') { $otherTypes[$a.Type] = $true } } }
+if ($context.Warnings.Count -gt 0 -or $otherTypes.Count -gt 0) {
+    Write-Host ('See the report for ' + $context.Warnings.Count + ' warning(s) and ' + $otherTypes.Count + ' activity type(s) from other libraries or packages.')
 }
 
 if ($PassThru) {
