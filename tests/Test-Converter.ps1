@@ -14,6 +14,12 @@
     Instead of running the tests, only check that these .drawio files are well-formed. Use it on
     diagrams made from real projects, without copying those projects into the tests.
 
+.PARAMETER UpdateBaseline
+    Instead of running the tests, rewrite tests/baselines/page-hashes.txt from the current converter.
+    The tests compare every state machine, flowchart and project map page made from the samples and
+    fixtures with that file, byte for byte. Update it only for a change that is meant to alter those
+    pages, and say why in the commit.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tests\Test-Converter.ps1
     pwsh -File .\tests\Test-Converter.ps1
@@ -23,7 +29,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string[]]$CheckFile
+    [string[]]$CheckFile,
+    [switch]$UpdateBaseline
 )
 
 Set-StrictMode -Version 2.0
@@ -33,6 +40,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $converter = Join-Path $repo 'src\Convert-UiPathToDrawio.ps1'
 $samples = Join-Path $repo 'samples'
 $fixtures = Join-Path $PSScriptRoot 'fixtures'    # made-up inputs for edge cases; see each file's comment
+$baselineFile = Join-Path $PSScriptRoot 'baselines\page-hashes.txt'
 
 $script:Passed = 0
 $script:Failed = New-Object System.Collections.Generic.List[string]
@@ -283,6 +291,47 @@ function Get-EdgeLabels {
     return $labels
 }
 
+function Get-PageHashes {
+    # One entry per page of a .drawio file: its name, what kind of page it is (from its title, for
+    # example "flowchart" or "project map") and the SHA-256 of the page's text exactly as written.
+    param([string]$File)
+    $text = [System.IO.File]::ReadAllText($File, [System.Text.Encoding]::UTF8)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $pages = @()
+    foreach ($m in [regex]::Matches($text, '(?s)<diagram id="[^"]*" name="([^"]*)">.*?</diagram>')) {
+        $kind = 'other'
+        $title = [regex]::Match($m.Value, 'value="([^"]*)" style="text;fontSize=16;')
+        if ($title.Success) {
+            if ($title.Groups[1].Value.StartsWith('Project map: ')) { $kind = 'project map' }
+            else {
+                $k = [regex]::Match($title.Groups[1].Value, '\(([^()]*)\)$')
+                if ($k.Success) { $kind = $k.Groups[1].Value }
+            }
+        }
+        $hash = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($m.Value)) | ForEach-Object { $_.ToString('x2') })
+        $pages += @{ Page = [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value); Kind = $kind; Hash = $hash }
+    }
+    return $pages
+}
+
+function Get-BaselineLines {
+    # Converts every sample and fixture and lists each page as "input|file|page|kind|hash".
+    param([string]$Folder)
+    $inputs = New-Object System.Collections.Generic.List[object]
+    foreach ($d in @('project', 'state-machine', 'flowchart')) { $inputs.Add(@{ Name = 'samples/' + $d; Path = (Join-Path $samples $d) }) }
+    foreach ($f in @(Get-ChildItem -LiteralPath $fixtures | Sort-Object Name)) { $inputs.Add(@{ Name = 'fixtures/' + $f.Name; Path = $f.FullName }) }
+    $lines = New-Object System.Collections.Generic.List[string]
+    $i = 0
+    foreach ($in in $inputs) {
+        $i++
+        $r = Invoke-Converter @{ Path = $in.Path; OutputPath = (Join-Path $Folder ('b' + $i)) }
+        foreach ($f in @($r.DrawioFiles | Sort-Object)) {
+            foreach ($p in (Get-PageHashes $f)) { $lines.Add(($in.Name, (Split-Path -Leaf $f), $p.Page, $p.Kind, $p.Hash) -join '|') }
+        }
+    }
+    return , $lines
+}
+
 function Write-Result {
     Write-Host ''
     if ($script:Failed.Count -gt 0) {
@@ -300,6 +349,17 @@ if ($CheckFile) {
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ('uipath-to-drawio-tests-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 [void](New-Item -ItemType Directory -Path $work)
+
+if ($UpdateBaseline) {
+    try {
+        $lines = Get-BaselineLines (Join-Path $work 'baseline')
+        [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $baselineFile))
+        [System.IO.File]::WriteAllText($baselineFile, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "Wrote $($lines.Count) page hashes to $baselineFile"
+    }
+    finally { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+    exit 0
+}
 
 try {
     Write-Host "PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
@@ -702,6 +762,27 @@ try {
     $r = Invoke-Converter @{ Path = $odd; OutputPath = (Join-Path $work 'odd-name-out') }
     $d = Test-DrawioStructure $r.DrawioFiles[0]
     Assert ((Split-Path -Leaf $r.DrawioFiles[0]).Length -le 90) 'keeps output file names short, however long the project name'
+
+    # --- Regression baseline: state machine, flowchart and project map pages, byte for byte --------
+    Write-Host "`nRegression baseline"
+    $protected = @('state machine', 'flowchart', 'project map')
+    Assert (Test-Path -LiteralPath $baselineFile) 'the page baseline file exists (tests/baselines/page-hashes.txt)'
+    if (Test-Path -LiteralPath $baselineFile) {
+        $expected = @{}
+        foreach ($line in [System.IO.File]::ReadAllLines($baselineFile)) {
+            $parts = $line.Split('|')
+            if ($parts.Count -eq 5 -and $protected -contains $parts[3]) { $expected[($parts[0..3] -join '|')] = $parts[4] }
+        }
+        $actual = @{}
+        foreach ($line in (Get-BaselineLines (Join-Path $work 'baseline'))) {
+            $parts = $line.Split('|')
+            if ($protected -contains $parts[3]) { $actual[($parts[0..3] -join '|')] = $parts[4] }
+        }
+        $changed = @($expected.Keys | Where-Object { $actual[$_] -ne $expected[$_] } | Sort-Object)
+        $added = @($actual.Keys | Where-Object { -not $expected.ContainsKey($_) } | Sort-Object)
+        Assert ($expected.Count -gt 0 -and $changed.Count -eq 0) ("all $($expected.Count) state machine, flowchart and project map pages are byte-identical to the baseline" + $(if ($changed.Count) { ' -- changed or missing: ' + ($changed -join '; ') } else { '' }))
+        Assert ($added.Count -eq 0) ('no state machine, flowchart or project map page appears that the baseline does not list' + $(if ($added.Count) { ' -- new: ' + ($added -join '; ') } else { '' }))
+    }
 
     $before = @(Get-ChildItem -LiteralPath $samples -Recurse -File | ForEach-Object { $_.FullName + '|' + $_.Length + '|' + $_.LastWriteTimeUtc.Ticks })
     [void](Invoke-Converter @{ Path = (Join-Path $samples 'project'); OutputPath = (Join-Path $work 'readonly-check') })

@@ -21,13 +21,22 @@
 .PARAMETER Corpus
     The list of projects. Default: corpus.csv next to this script.
 
+.PARAMETER Baseline
+    A page-hashes.csv from an earlier run. Every page of this run is compared with it byte for byte,
+    and the summary lists the pages that changed, by kind (state machine, flowchart, sequence, ...).
+    Each run writes its own page-hashes.csv to the work folder; keep a copy to compare later runs with.
+
 .EXAMPLE
     pwsh -File .\tests\compatibility\Invoke-CompatibilityRun.ps1
+
+.EXAMPLE
+    pwsh -File .\tests\compatibility\Invoke-CompatibilityRun.ps1 -Baseline .\page-hashes-v0.1.0.csv
 #>
 [CmdletBinding()]
 param(
     [string]$WorkFolder = (Join-Path ([System.IO.Path]::GetTempPath()) 'uipath-to-drawio-compatibility'),
-    [string]$Corpus = (Join-Path $PSScriptRoot 'corpus.csv')
+    [string]$Corpus = (Join-Path $PSScriptRoot 'corpus.csv'),
+    [string]$Baseline
 )
 
 Set-StrictMode -Version 2.0
@@ -43,7 +52,7 @@ foreach ($d in @($sources, $outputs)) { [void](New-Item -ItemType Directory -For
 # Reuse the diagram checks from the test script, without running its tests.
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($testScript, [ref]$null, [ref]$null)
 foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
-    if (@('Get-StyleNumber', 'Get-ArrowProblems', 'Get-CellInfo', 'Get-Label', 'Read-Drawio') -contains $f.Name) {
+    if (@('Get-StyleNumber', 'Get-ArrowProblems', 'Get-CellInfo', 'Get-Label', 'Read-Drawio', 'Get-PageHashes') -contains $f.Name) {
         . ([scriptblock]::Create($f.Extent.Text))
     }
 }
@@ -119,6 +128,7 @@ function Test-Download {
 
 $rows = @(Import-Csv -LiteralPath $Corpus)
 $results = New-Object System.Collections.Generic.List[object]
+$pageHashes = New-Object System.Collections.Generic.List[object]    # every page of the PowerShell 7 output
 $i = 0
 foreach ($p in $rows) {
     $i++
@@ -170,6 +180,11 @@ foreach ($p in $rows) {
         if (-not (Test-Path -LiteralPath $other) -or (Get-FileHash -LiteralPath $f.FullName).Hash -ne (Get-FileHash -LiteralPath $other).Hash) { $same = $false }
     }
     $row.SameIn51And7 = $same
+    foreach ($f in $diagrams) {
+        foreach ($pg in (Get-PageHashes $f.FullName)) {
+            $pageHashes.Add([pscustomobject]@{ Project = $short; File = $f.Name; Page = $pg.Page; Kind = $pg.Kind; Hash = $pg.Hash })
+        }
+    }
 
     $report = ''
     $reportFile = @(Get-ChildItem -LiteralPath $out7 -Filter *.conversion-report.txt -ErrorAction SilentlyContinue) | Select-Object -First 1
@@ -230,6 +245,8 @@ foreach ($p in $rows) {
 $csvOptions = @{ LiteralPath = (Join-Path $WorkFolder 'results.csv'); Encoding = 'UTF8' }
 if ($PSVersionTable.PSVersion.Major -lt 6) { $csvOptions.NoTypeInformation = $true }   # the default from PowerShell 6 on
 $results | Export-Csv @csvOptions
+$csvOptions.LiteralPath = (Join-Path $WorkFolder 'page-hashes.csv')
+$pageHashes | Export-Csv @csvOptions
 
 # Only complete downloads that converted in both versions count towards the totals below.
 $ok = @($results | Where-Object { $_.Complete -and $_.Exit7 -eq 0 -and $_.Exit51 -eq 0 })
@@ -247,6 +264,29 @@ $lines = @(
     "Unreadable files: $(& $sum 'Unreadable'); not workflows: $(& $sum 'NotWorkflows'); folders skipped: $(& $sum 'SkippedFolders'); warnings: $(& $sum 'Warnings')"
     "Diagram check problems: $(& $sum 'CheckProblems')"
 )
+if ($Baseline) {
+    # Byte-for-byte comparison of every page with the earlier run, keyed by project, file and page.
+    $old = @{}
+    foreach ($b in @(Import-Csv -LiteralPath $Baseline)) { $old[$b.Project + '|' + $b.File + '|' + $b.Page] = $b }
+    $seen = @{}
+    $changed = @{}
+    $same = 0
+    foreach ($pg in $pageHashes) {
+        $k = $pg.Project + '|' + $pg.File + '|' + $pg.Page
+        $seen[$k] = $true
+        if (-not $old.ContainsKey($k)) { $changed['new ' + $pg.Kind] = 1 + [int]$changed['new ' + $pg.Kind]; continue }
+        if ($old[$k].Hash -eq $pg.Hash -and $old[$k].Kind -eq $pg.Kind) { $same++ }
+        else {
+            $what = $old[$k].Kind
+            if ($old[$k].Kind -ne $pg.Kind) { $what = $old[$k].Kind + ' -> ' + $pg.Kind }
+            $changed[$what] = 1 + [int]$changed[$what]
+        }
+    }
+    foreach ($k in $old.Keys) { if (-not $seen.ContainsKey($k)) { $changed['gone ' + $old[$k].Kind] = 1 + [int]$changed['gone ' + $old[$k].Kind] } }
+    $detail = (@($changed.Keys | Sort-Object | ForEach-Object { $_ + ': ' + $changed[$_] }) -join '; ')
+    if (-not $detail) { $detail = 'none' }
+    $lines += "Pages compared with the baseline: $($pageHashes.Count); identical: $same; changed: $detail"
+}
 [System.IO.File]::WriteAllText((Join-Path $WorkFolder 'summary.txt'), ($lines -join "`r`n") + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
 $lines | ForEach-Object { Write-Host $_ }
 Write-Host "Results: $(Join-Path $WorkFolder 'results.csv')"

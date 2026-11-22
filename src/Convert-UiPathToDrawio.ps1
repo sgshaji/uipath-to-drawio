@@ -140,6 +140,50 @@ $script:Style = @{
     Edge           = 'endArrow=block;endFill=1;rounded=1;fontSize=11;labelBackgroundColor=#ffffff;strokeColor=#555555;'
 }
 
+# What each node and row is (its role) decides how it is drawn. The graph builders only say what a
+# thing is; these lookups are the one place that turns that into a draw.io style.
+$script:RoleStyle = @{
+    'start'           = $script:Style.Start
+    'state'           = $script:Style.State
+    'state|Card'      = $script:Style.StateCard
+    'finalState'      = $script:Style.FinalState
+    'finalState|Card' = $script:Style.FinalStateCard
+    'step'            = $script:Style.Step
+    'step|Card'       = $script:Style.StepCard
+    'invoke'          = $script:Style.Invoke
+    'invokeMissing'   = $script:Style.InvokeMissing
+    'invokeComputed'  = $script:Style.InvokeComputed
+    'otherActivity'   = $script:Style.Unknown
+    'decision'        = $script:Style.Decision
+    'switch'          = $script:Style.Switch
+    'workflow'        = $script:Style.Workflow
+    'mainWorkflow'    = $script:Style.MainWorkflow
+    'brokenWorkflow'  = $script:Style.BrokenWorkflow
+    'notWorkflow'     = $script:Style.Unknown
+}
+$script:RowStyle = @{
+    'linked'   = $script:Style.Row
+    'missing'  = $script:Style.RowMissing
+    'computed' = $script:Style.RowComputed
+    'plain'    = $script:Style.RowPlain
+}
+
+function Get-NodeStyle {
+    # A node's draw.io style, from its role and shape. Card variants have their own entries.
+    param($Node)
+    $style = $script:RoleStyle[$Node.Role + '|' + $Node.Kind]
+    if ($null -eq $style) { $style = $script:RoleStyle[$Node.Role] }
+    if ($null -eq $style) { throw "No style for role '$($Node.Role)'." }
+    if ($Node.LabelSide -eq 'Below') { $style += $script:Style.LabelBelow }
+    elseif ($Node.LabelSide -eq 'BelowRight') { $style += $script:Style.LabelBelowRight }
+    return $style
+}
+
+function Get-RowStyle {
+    param($Row)
+    return $script:RowStyle[$Row.Status]
+}
+
 $script:CardHeader = 28
 $script:RowHeight = 22
 $script:RowGap = 4
@@ -627,12 +671,13 @@ function Read-Workflow {
 $script:NodeByElement = New-Object 'System.Collections.Generic.Dictionary[object,object]'
 
 function New-Node {
-    param([string]$Key, [string]$Kind, [string]$Label, [string]$Style, $Element = $null)
+    param([string]$Key, [string]$Kind, [string]$Label, [string]$Role, $Element = $null)
     $node = @{
         Key     = $Key
-        Kind    = $Kind      # Start, Box, Card, Decision, Switch
+        Kind    = $Kind      # shape: Start, Box, Card, Decision, Switch
         Label   = $Label
-        Style   = $Style
+        Role    = $Role      # what it is: state, step, invoke, decision ... (see $script:RoleStyle)
+        LabelSide = $null    # decisions on Studio layouts: where the text goes, Below or BelowRight
         Element = $Element
         Rows    = (New-Object System.Collections.Generic.List[object])
         Link    = $null
@@ -683,8 +728,9 @@ function Get-PolylineLength {
 }
 
 function New-Row {
-    param([string]$Text, [string]$Style, [string]$Link)
-    return @{ Text = $Text; Style = $Style; Link = $Link }
+    param([string]$Text, [string]$Status, [string]$Link)
+    # Status: linked, missing, computed (set at run time or outside the project) or plain.
+    return @{ Text = $Text; Status = $Status; Link = $Link }
 }
 
 function New-InvokeRow {
@@ -692,17 +738,27 @@ function New-InvokeRow {
     if ($Invoke.Computed) {
         $text = '(file name set at run time)'
         if ($Context.IncludeDetails -and $Invoke.Raw) { $text = 'Run-time file name: ' + $Invoke.Raw }
-        return (New-Row ($text + $Suffix) $script:Style.RowComputed $null)
+        return (New-Row ($text + $Suffix) 'computed' $null)
     }
     if ($Invoke.Outside) {
-        return (New-Row ((Get-OutsideText $Invoke $Context) + ' (outside the project)' + $Suffix) $script:Style.RowComputed $null)
+        return (New-Row ((Get-OutsideText $Invoke $Context) + ' (outside the project)' + $Suffix) 'computed' $null)
     }
     if (-not $Invoke.Exists) {
-        return (New-Row ($Invoke.Rel + ' (missing)' + $Suffix) $script:Style.RowMissing $null)
+        return (New-Row ($Invoke.Rel + ' (missing)' + $Suffix) 'missing' $null)
     }
     $link = $null
     if ($Context.PageIds.ContainsKey($Invoke.Key)) { $link = 'data:page/id,' + $Context.PageIds[$Invoke.Key] }
-    return (New-Row ($Invoke.Rel + $Suffix) $script:Style.Row $link)
+    return (New-Row ($Invoke.Rel + $Suffix) 'linked' $link)
+}
+
+function Get-InvokeRole {
+    # The role of a step that invokes a workflow, from the state of its target.
+    param($Row)
+    switch ($Row.Status) {
+        'missing' { return 'invokeMissing' }
+        'computed' { return 'invokeComputed' }
+    }
+    return 'invoke'
 }
 
 function Add-UniqueRow {
@@ -743,7 +799,7 @@ function Get-StateMachineGraph {
         if ($n) { $nameMap[$n] = $s }
     }
 
-    $start = New-Node 'start' 'Start' 'Start' $script:Style.Start $Machine
+    $start = New-Node 'start' 'Start' 'Start' 'start' $Machine
     $machineVs = Get-ViewState $Machine $vsMap
     $start.Studio = Get-StudioRect $machineVs 60 75
     $nodes.Add($start)
@@ -752,8 +808,9 @@ function Get-StateMachineGraph {
     foreach ($s in $states) {
         $i++
         $isFinal = ((Get-Attr $s 'IsFinal') -eq 'True')
-        $node = New-Node ('s' + $i) 'Box' (Get-DisplayName $s 'State') $script:Style.State $s
-        if ($isFinal) { $node.Style = $script:Style.FinalState }
+        $role = 'state'
+        if ($isFinal) { $role = 'finalState' }
+        $node = New-Node ('s' + $i) 'Box' (Get-DisplayName $s 'State') $role $s
         $node.Studio = Get-StudioRect (Get-ViewState $s $vsMap) 160 80
         $nodes.Add($node)
     }
@@ -780,10 +837,7 @@ function Get-StateMachineGraph {
         if ($null -ne $node) { Add-UniqueRow $node (New-InvokeRow $inv $Context $suffix) }
     }
     foreach ($n in $nodes) {
-        if ($n.Rows.Count -gt 0) {
-            $n.Kind = 'Card'
-            if ($n.Style -eq $script:Style.FinalState) { $n.Style = $script:Style.FinalStateCard } else { $n.Style = $script:Style.StateCard }
-        }
+        if ($n.Rows.Count -gt 0) { $n.Kind = 'Card' }
     }
 
     # Initial state
@@ -865,7 +919,7 @@ function Get-FlowchartGraph {
         if ($n) { $nameMap[$n] = $e }
     }
 
-    $start = New-Node 'start' 'Start' 'Start' $script:Style.Start $Chart
+    $start = New-Node 'start' 'Start' 'Start' 'start' $Chart
     $chartVs = Get-ViewState $Chart $vsMap
     $start.Studio = Get-StudioRect $chartVs 60 75
     $nodes.Add($start)
@@ -879,20 +933,18 @@ function Get-FlowchartGraph {
             'FlowStep' {
                 $act = Get-ActivityChild $e
                 if ($null -eq $act) {
-                    $node = New-Node $key 'Box' '(empty step)' $script:Style.Step $e
+                    $node = New-Node $key 'Box' '(empty step)' 'step' $e
                 }
                 elseif ($act.get_LocalName() -eq 'InvokeWorkflowFile') {
                     $inv = $null
                     [void]$invokeByElement.TryGetValue($act, [ref]$inv)
                     $row = New-InvokeRow $inv $Context ''
-                    $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n" + $row.Text) $script:Style.Invoke $e
-                    if ($row.Style -eq $script:Style.RowMissing) { $node.Style = $script:Style.InvokeMissing }
-                    if ($row.Style -eq $script:Style.RowComputed) { $node.Style = $script:Style.InvokeComputed }
+                    $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n" + $row.Text) (Get-InvokeRole $row) $e
                     $node.Link = $row.Link
                 }
                 elseif ((Get-ActivitySource $act.get_NamespaceURI()) -eq 'Other') {
                     # From the project's own library or a third-party package: shown with its type, dashed.
-                    $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n[" + $act.get_LocalName() + ']') $script:Style.Unknown $e
+                    $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n[" + $act.get_LocalName() + ']') 'otherActivity' $e
                 }
                 else {
                     $label = Get-StepLabel $act
@@ -900,7 +952,7 @@ function Get-FlowchartGraph {
                         $label = $label + ' (nested ' + $act.get_LocalName().ToLowerInvariant() + ')'
                         $warnings.Add('Step "' + (Get-StepLabel $act) + '" holds a nested ' + $act.get_LocalName().ToLowerInvariant() + '; it is not expanded in version 1.')
                     }
-                    $node = New-Node $key 'Box' $label $script:Style.Step $e
+                    $node = New-Node $key 'Box' $label 'step' $e
                 }
                 $node.Studio = Get-StudioRect $vs 200 52
             }
@@ -910,7 +962,7 @@ function Get-FlowchartGraph {
                     $cond = Get-PropertyText $e 'Condition' 'FlowDecision.Condition'
                     if ($cond) { $label = $label + "`n" + $cond }
                 }
-                $node = New-Node $key 'Decision' $label $script:Style.Decision $e
+                $node = New-Node $key 'Decision' $label 'decision' $e
                 $node.Studio = Get-StudioRect $vs 70 70
             }
             'FlowSwitch' {
@@ -919,7 +971,7 @@ function Get-FlowchartGraph {
                     $expr = Get-PropertyText $e 'Expression' 'FlowSwitch.Expression'
                     if ($expr) { $label = $label + "`n" + $expr }
                 }
-                $node = New-Node $key 'Switch' $label $script:Style.Switch $e
+                $node = New-Node $key 'Switch' $label 'switch' $e
                 $node.Studio = Get-StudioRect $vs 70 70
             }
         }
@@ -943,7 +995,7 @@ function Get-FlowchartGraph {
     foreach ($n in $nodes) {
         if ($n.Rows.Count -gt 0 -and $n.Kind -eq 'Box') {
             $n.Kind = 'Card'
-            $n.Style = $script:Style.StepCard
+            $n.Role = 'step'
         }
     }
 
@@ -1155,9 +1207,7 @@ function Set-StudioLayout {
             $n.W = $d
             $n.H = $d
         }
-        if ($n.Kind -eq 'Decision' -or $n.Kind -eq 'Switch') {
-            $n.Style = $n.Style + $script:Style.LabelBelow
-        }
+        if ($n.Kind -eq 'Decision' -or $n.Kind -eq 'Switch') { $n.LabelSide = 'Below' }
     }
 
     foreach ($e in $Graph.Edges) {
@@ -1198,7 +1248,6 @@ function Set-StudioLayout {
                 if ([Math]::Abs($pt[0] - ($n.X + $n.W / 2)) -le $n.W * 0.15 -and $pt[1] -ge $n.Y + $n.H * 0.9) { $n.LabelSide = 'BelowRight' }
             }
         }
-        if ($n.LabelSide -eq 'BelowRight') { $n.Style = $n.Style.Replace($script:Style.LabelBelow, $script:Style.LabelBelowRight) }
     }
     Set-ClearLabelPlaces $Graph
     return @{ X = $sx; Y = $sy }
@@ -1737,12 +1786,12 @@ function Add-GraphToPage {
     param($Page, $Graph)
     $cellIds = @{}
     foreach ($n in $Graph.Nodes) {
-        $id = Add-Vertex $Page $n.Label $n.Style $n.X $n.Y $n.W $n.H '1' $n.Link
+        $id = Add-Vertex $Page $n.Label (Get-NodeStyle $n) $n.X $n.Y $n.W $n.H '1' $n.Link
         $cellIds[$n.Key] = $id
         if ($n.Kind -eq 'Card') {
             $y = $script:CardHeader + $script:RowGap
             foreach ($r in $n.Rows) {
-                [void](Add-Vertex $Page $r.Text $r.Style 8 $y ($n.W - 16) $script:RowHeight $id $r.Link)
+                [void](Add-Vertex $Page $r.Text (Get-RowStyle $r) 8 $y ($n.W - 16) $script:RowHeight $id $r.Link)
                 $y += $script:RowHeight + $script:RowGap
             }
         }
@@ -1906,9 +1955,9 @@ function New-WorkflowPage {
     # Sequences and anything else: a summary card listing the workflows the file invokes.
     $rootLabel = 'Empty workflow'
     if ($null -ne $Workflow.Root) { $rootLabel = Get-DisplayName $Workflow.Root $Workflow.Root.get_LocalName() }
-    $node = New-Node 'root' 'Card' $rootLabel $script:Style.StepCard $Workflow.Root
+    $node = New-Node 'root' 'Card' $rootLabel 'step' $Workflow.Root
     foreach ($inv in $Workflow.Invokes) { Add-UniqueRow $node (New-InvokeRow $inv $Context '') }
-    if ($node.Rows.Count -eq 0) { $node.Rows.Add((New-Row 'Invokes no other workflows' $script:Style.RowPlain $null)) }
+    if ($node.Rows.Count -eq 0) { $node.Rows.Add((New-Row 'Invokes no other workflows' 'plain' $null)) }
     $size = Measure-Node $node $false
     $node.X = $left; $node.Y = $top; $node.W = $size.W; $node.H = $size.H
     $graph = @{ Nodes = @($node); Edges = @() }
@@ -1939,11 +1988,11 @@ function New-ProjectMapPage {
     $i = 0
     foreach ($wf in $Workflows) {
         $i++
-        $style = $script:Style.Workflow
-        if ($wf.IsMain) { $style = $script:Style.MainWorkflow }
-        if ($wf.Error) { $style = $script:Style.BrokenWorkflow }
-        if ($wf.Kind -eq 'NotWorkflow') { $style = $script:Style.Unknown }
-        $node = New-Node ('w' + $i) 'Box' ($wf.Rel + "`n(" + $wf.KindLabel + ')') $style
+        $role = 'workflow'
+        if ($wf.IsMain) { $role = 'mainWorkflow' }
+        if ($wf.Error) { $role = 'brokenWorkflow' }
+        if ($wf.Kind -eq 'NotWorkflow') { $role = 'notWorkflow' }
+        $node = New-Node ('w' + $i) 'Box' ($wf.Rel + "`n(" + $wf.KindLabel + ')') $role
         if ($LinkPages -and $Context.PageIds.ContainsKey($wf.Key)) { $node.Link = 'data:page/id,' + $Context.PageIds[$wf.Key] }
         $nodes.Add($node)
         $nodeByKey[$wf.Key] = $node
@@ -1960,7 +2009,7 @@ function New-ProjectMapPage {
                 $c++
                 $label = '(file name set at run time)'
                 if ($Context.IncludeDetails -and $inv.Raw) { $label = 'Run-time file name:' + "`n" + $inv.Raw }
-                $target = New-Node ('c' + $c) 'Box' $label $script:Style.InvokeComputed
+                $target = New-Node ('c' + $c) 'Box' $label 'invokeComputed'
                 $nodes.Add($target)
             }
             elseif ($inv.Outside) {
@@ -1968,7 +2017,7 @@ function New-ProjectMapPage {
                 $outsideKey = 'outside|' + $inv.Key
                 if (-not $nodeByKey.ContainsKey($outsideKey)) {
                     $label = (Get-OutsideText $inv $Context) + "`n(outside the project)"
-                    $nodeByKey[$outsideKey] = New-Node ('o' + $nodes.Count) 'Box' $label $script:Style.InvokeComputed
+                    $nodeByKey[$outsideKey] = New-Node ('o' + $nodes.Count) 'Box' $label 'invokeComputed'
                     $nodes.Add($nodeByKey[$outsideKey])
                 }
                 $target = $nodeByKey[$outsideKey]
@@ -1977,10 +2026,10 @@ function New-ProjectMapPage {
                 $target = $nodeByKey[$inv.Key]
             }
             else {
-                $target = New-Node ('m' + $nodes.Count) 'Box' ($inv.Rel + "`n(missing)") $script:Style.InvokeMissing
+                $target = New-Node ('m' + $nodes.Count) 'Box' ($inv.Rel + "`n(missing)") 'invokeMissing'
                 if ($inv.Exists) {
                     $target.Label = $inv.Rel + "`n(not converted)"
-                    $target.Style = $script:Style.InvokeComputed
+                    $target.Role = 'invokeComputed'
                 }
                 $nodes.Add($target)
                 $nodeByKey[$inv.Key] = $target
