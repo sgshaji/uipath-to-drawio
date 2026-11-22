@@ -123,7 +123,7 @@ Between the representation and layout sits a **lowering** step that turns contai
 
 ## 8. Plan: detailed UiPath sequence support
 
-The compatibility run shows why this comes first: **88% of real workflows are sequences, and only 64 of 657 workflows (10%) get a detailed diagram today.** In the corpus, workflows use 3,303 sequences, 925 If activities, 456 Try/Catches and 285 loops, with containers nested to a median depth of 2 and a maximum of 27.
+The compatibility run shows why this comes first: **88% of real workflows are sequences, and in release 0.1.0 only 64 of 657 workflows (10%) get a detailed diagram.** In the corpus, workflows use 3,303 sequences, 925 If activities, 456 Try/Catches and 285 loops, with containers nested to a median depth of 2 and a maximum of 27.
 
 ### 8.1 What a sequence diagram means
 
@@ -161,7 +161,7 @@ No collapsed box is ever silent. Every one adds a counted line to the report's "
 
 ### 8.3 Milestones
 
-**Status:** S0 and S1 are done (after release 0.1.0; results in the [compatibility report](compatibility-report.md#sequence-pages-s0-and-s1)). Differences from the plan below: the depth limit is fixed at 8 rather than a `-MaxDepth` parameter, because the deepest nesting of sequences in the corpus is 4; there is no size limit, because the longest sequence in the corpus has 24 activities; and the flowchart and state-machine protection uses page hashes of the samples and fixtures in the tests, plus every corpus page in the compatibility run.
+**Status:** S0, S1 and S2 are done (after release 0.1.0, on the main branch; results in the [compatibility report](compatibility-report.md#part-2-unreleased-work-on-the-main-branch)). S2 draws every branch as a column under one decision rather than side-by-side frames that rejoin from the decision's sides; an Else If is a chain of decisions. Differences from the plan below: the depth limit is fixed at 8 rather than a `-MaxDepth` parameter, because the deepest nesting of sequences in the corpus is 4; there is no size limit, because the longest sequence in the corpus has 24 activities; and the flowchart and state-machine protection uses page hashes of the samples and fixtures in the tests, plus every corpus page in the compatibility run.
 
 | Milestone | Scope | Acceptance criteria |
 | --- | --- | --- |
@@ -195,6 +195,6 @@ Each release's compatibility report states these figures next to the previous re
 ## 9. Recommended order
 
 1. Release `v0.1.0` from the current, stabilized state (release only with approval). The release-candidate checklist is in [`release-checklist.md`](release-checklist.md).
-2. S0 and S1 (sequences): the largest gain in coverage, from about 10% of workflows drawn in detail to most of them.
+2. S0 and S1 (sequences): the largest gain in coverage, from about 10% of workflows drawn in detail to most of them. (Done: 642 of 657 workflows now have step-by-step pages, but only 26% of activities are drawn individually after S2; see the compatibility report.)
 3. S2 and S3.
 4. Reassess demand. Only then consider an n8n prototype, starting with a spike on a handful of exported workflows to verify section 5. A migration representation (section 3) is a separate decision.

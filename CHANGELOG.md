@@ -7,7 +7,9 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 ### Added
 
 - **Sequence pages.** A workflow whose top-level activity is a Sequence is drawn step by step instead of getting a summary page: its activities top to bottom in the order written, nested sequences as frames, invoke steps linked to their workflows. An activity that holds others (If, Try/Catch, loops, scopes, containers from other packages) is one dashed box saying how many activities it holds and listing the workflows invoked inside it; its contents are not expanded yet. Comment Out boxes say their activities do not run.
-- The report ends each workflow's line with "Activities drawn: N of M".
+- **Branches on sequence pages.** If, Else If and Switch are drawn as decisions with their branches side by side, labelled Then and Else, or with the case values in the order written and Default, meeting again at a dot. An empty or missing branch is an arrow straight to the dot. An Else If is drawn as a chain of conditions, keeping their order. Conditions are never evaluated; `-IncludeDetails` shows them as text.
+- The report ends each workflow's line with "Activities drawn: N of M", and counts the decisions drawn and the activities not expanded, by type.
+- A [migration-semantics requirements ledger](docs/migration-requirements-ledger.md): documentation only.
 
 ### Changed
 

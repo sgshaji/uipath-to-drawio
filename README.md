@@ -8,9 +8,9 @@ Turn UiPath workflow files (`.xaml`) into editable [draw.io](https://www.drawio.
 
 See how a project's workflows invoke one another, review its state machines and flowcharts, and document an automation for review or migration planning, without opening UiPath Studio. The converter runs entirely offline in PowerShell on Windows, with no extra modules, and reports what it drew, summarised or could not read.
 
-**This is a structural overview, not a complete picture of runtime behaviour.** State machines and flowcharts are drawn. Sequences are drawn step by step, but the activities inside an If, Try/Catch, loop or scope are not yet expanded; other top-level workflow types receive summary pages. The tool does not execute workflows or migrate their implementation to another platform.
+**This is a structural overview, not a complete picture of runtime behaviour.** State machines and flowcharts are drawn. Sequences are drawn step by step, with If, Else If and Switch shown with their branches, but the activities inside a Try/Catch, loop or scope are not yet expanded; other top-level workflow types receive summary pages. The tool does not execute workflows or migrate their implementation to another platform.
 
-> Sequence pages are new on the main branch and are not in the 0.1.0 release, which gives sequences a summary page. See the [changelog](CHANGELOG.md).
+> Sequence pages, and the If, Else If and Switch branches on them, are new on the main branch and are not in the 0.1.0 release, which gives sequences a summary page. See the [changelog](CHANGELOG.md).
 
 [Quick start](#quick-start) | [Supported content](#supported-content) | [Options](#options) | [Detailed usage guide](docs/usage.md)
 
@@ -29,13 +29,13 @@ Support depends on the workflow's **top-level activity**, not just its `.xaml` e
 | Top-level state machine | States, named transitions, start marker and invoked workflows. Activities inside each state are not expanded. |
 | Top-level flowchart | Steps, decisions, switches and their connections. Container activities are summarised rather than expanded. |
 | Project workflow calls | A map of `InvokeWorkflowFile` references. Missing, external and runtime-computed targets are marked rather than guessed. |
-| Top-level sequence | Its activities top to bottom, in the order written, with nested sequences as frames and invoke steps linked to their workflows. An activity that holds others (If, Try/Catch, loops, scopes) is one dashed box saying how many activities it holds and listing the workflows invoked inside it; its contents are not expanded yet. |
+| Top-level sequence | Its activities top to bottom, in the order written, with nested sequences as frames and invoke steps linked to their workflows. If, Else If and Switch are decisions with their labelled branches; an empty branch is shown going straight on. Any other activity that holds others (Try/Catch, loops, scopes) is one dashed box saying how many activities it holds and listing the workflows invoked inside it; its contents are not expanded yet. |
 | Top-level If, Try/Catch, loops and other activities | A summary listing the workflows they invoke, not a step-by-step diagram. |
 | Nested flowcharts or state machines | Not expanded into their own diagrams. |
 | Flowchart and sequence steps using activities from custom or third-party packages | Plain dashed boxes showing the activity type; the report lists each such type with its package. |
 | Coded workflows (`.cs`), Invoke Process and Run Parallel Process | Coded workflows are not converted; these other process-starting activities do not create project-map links. |
 
-In sequence-heavy projects much of the logic sits inside If, Try/Catch and loop activities, which are not expanded yet. The report says, for each workflow, how many of its activities are drawn. See the [usage guide](docs/usage.md) for how each case is represented.
+In sequence-heavy projects much of the logic still sits inside Try/Catch, loop and scope activities, which are not expanded yet. The report says, for each workflow, how many of its activities are drawn. See the [usage guide](docs/usage.md) for how each case is represented.
 
 ## Example output
 
@@ -53,7 +53,7 @@ Open either image for a larger view, or see the [flowchart example](docs/images/
 - **To convert:** Windows with Windows PowerShell 5.1 (included in Windows 10 and 11) or PowerShell 7. No UiPath installation, credentials or extra runtime dependencies are needed.
 - **To view and edit:** the [draw.io desktop app](https://www.drawio.com), [app.diagrams.net](https://app.diagrams.net), or Visual Studio Code with the [Draw.io Integration extension](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio).
 
-**UiPath compatibility:** automated tests cover made-up XAML workflows and both saved-layout formats. A [compatibility run](docs/compatibility-report.md) over 93 public projects, from Studio 2018 to 2026, converted every project in both PowerShell versions; it also found that only 10% of real workflows are drawn in detail, because most are sequences. No cross-platform projects were available to test. Try a representative project and check the report before relying on the output. The converter itself is Windows-only.
+**UiPath compatibility:** automated tests cover made-up XAML workflows and both saved-layout formats. A [compatibility run](docs/compatibility-report.md) over 93 public projects, from Studio 2018 to 2026, converted every project in both PowerShell versions. With release 0.1.0 only 10% of real workflows (64 of 657) are drawn in detail, because most are sequences. On the main branch, sequences have step-by-step pages and 26% of activities are drawn individually; the report keeps the [released and unreleased figures](docs/compatibility-report.md) apart. No cross-platform projects were available to test. Try a representative project and check the report before relying on the output. The converter itself is Windows-only.
 
 ## Quick start
 

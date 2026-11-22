@@ -23,7 +23,8 @@ Each file is read as XML. Nothing in it is run or evaluated. The top-level activ
 | --- | --- |
 | State machine | A diagram of states, transitions and invoked workflows. |
 | Flowchart | A diagram of steps, decisions, switches and connections. |
-| Other activity, such as Sequence, If, Try/Catch or a loop | A summary listing the workflows it invokes. Activities inside it are not drawn step by step. |
+| Sequence | A sequence page: its activities top to bottom, with its If, Else If and Switch branches. See [Sequences](#sequences). (Release 0.1.0 gives a summary page instead.) |
+| Other activity, such as Try/Catch or a loop | A summary listing the workflows it invokes. Activities inside it are not drawn step by step. |
 | Empty workflow | A page identifying it as empty. |
 | A `.xaml` file that is not a UiPath workflow | A page explaining that it is not a workflow, plus a report entry. |
 | A file that cannot be read | A page identifying the read failure, plus a report entry with the reason and, for malformed XML, the line and position. |
@@ -60,11 +61,18 @@ A workflow whose top-level activity is a Sequence gets a sequence page. Sequence
 - A sequence inside it is a frame of its own, up to 8 levels deep. Frames are draw.io containers: moving one moves its contents. A deeper sequence is collapsed into one box saying how many activities it holds.
 - An Invoke Workflow File step names the invoked file and links to its page, or is marked missing, outside the project or set at run time.
 - A single activity is a box named by its display name, or by its type when it has none. An activity from another library or package is a dashed box showing its type.
-- **An activity that holds other activities is not expanded.** If, Try/Catch, loops, Retry Scope, application and browser scopes, and containers from other packages are each drawn as one dashed box. The box names the activity type, says how many activities it holds, and lists the workflows invoked inside it. Nothing is drawn or guessed about what it does with its contents.
+- **If, Else If and Switch are drawn with their branches.** The decision is a diamond named by its display name. Its branches sit side by side below it, each labelled, and meet again at a small dot; the sequence carries on from the dot.
+  - An If has a Then branch and an Else branch, in that order.
+  - A Switch has one branch per case, labelled with the case value, in the order the file lists them, and then Default.
+  - An Else If (UiPath's Else If activity) is a chain: the first condition's Else leads to a diamond for the next condition, and so on; the Else block is the last Else. This keeps the order in which the conditions are tried.
+  - Each branch holds what the file holds: a sequence is a frame, a nested decision is drawn the same way, and other containers are dashed boxes.
+  - **A branch with nothing in it** (a missing Then or Else, an empty case, a missing Default) is an arrow straight to the dot: when it is taken, nothing happens.
+  - Decisions count towards the 8-level depth limit, like sequences.
+- **Any other activity that holds activities is not expanded.** Try/Catch, loops, Retry Scope, application and browser scopes, and containers from other packages are each drawn as one dashed box. The box names the activity type, says how many activities it holds, and lists the workflows invoked inside it. Nothing is drawn or guessed about what it does with its contents.
 - A Comment Out box says its activities are commented out and do not run; workflows invoked inside it are listed as commented out.
-- Conditions and expressions are never shown on sequence pages.
+- Conditions and switch expressions are never evaluated. They are left out by default; `-IncludeDetails` adds them to the diamond as text.
 
-The report's line for each workflow ends with "Activities drawn: N of M", counting the activities below the top-level one. On a sequence page, the activities not drawn are exactly those inside the dashed boxes.
+The report's line for each workflow ends with "Activities drawn: N of M", counting the activities below the top-level one. On a sequence page, the activities not drawn are exactly those inside the dashed boxes. The line also counts the decisions drawn with their branches, by type, and the activities not expanded, by type. A page with a step diagram is not necessarily complete: only "Activities drawn: N of N" means every activity is shown.
 
 ### Layout
 
@@ -147,7 +155,8 @@ The report avoids absolute input and output paths in its header, but retains fil
 | Purple box | A step that invokes a workflow. |
 | Grey box with a header | A container or summary page listing invoked workflows. |
 | Blue-grey frame with a header | A sequence, holding its activities top to bottom. |
-| Dashed grey box with a header | An activity holding others that is not expanded (such as If or Try/Catch), or a Comment Out. The first line says what it is and how many activities it holds. |
+| Dashed grey box with a header | An activity holding others that is not expanded (such as Try/Catch or a loop), or a Comment Out. The first line says what it is and how many activities it holds. |
+| Small grey dot | On a sequence page, where the branches of a decision meet again. |
 | Dashed grey box showing a type in brackets | A flowchart step whose activity comes from another library or package (not UiPath or Workflow Foundation). |
 | Yellow diamond | A flow decision. |
 | Orange diamond | A flow switch. |
