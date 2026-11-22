@@ -1,0 +1,94 @@
+Repository,ProjectPath,Commit,StudioVersion,TargetFramework,ExpressionLanguage,OutputType
+a-x-r-o-n/FAQ-Genie,project.json,a13283eaa6600cee7efcd67c60ef206355f54533,24.10.1.0,Windows,VisualBasic,Process
+AdamAdamczak/DebtRegistryChecker-Uipath,project.json,bb3efb9e874263d25187117c85f75ccab8ff573b,25.0.161.0,Windows,CSharp,Process
+alannqt/UIpath-StudioX-SupplyChain,project.json,f2de90fc030c18fa1776afb4958b62208d935cd3,21.4.3.0,Legacy,VisualBasic,Process
+andumorie/uipath-face-recognition-framework,project.json,382176815d402017cbacd9467c9e780a45416ac2,22.10.4.0,Windows,VisualBasic,Process
+APITemplate-io/UIPath-Integration,project.json,b76ade49b9e6c4c503e6723842ebec9d32ab0e11,20.4.1.0,Classic,VisualBasic,Process
+ashimariyam/Employee_Onboarding_UiPath,project.json,14eb4ccec79663e6544b601238251f735a8fd224,23.10.0.0,Windows,VisualBasic,Process
+AsmaTrabelsi/RPA-Excel-Data-Entry-Automation,project.json,6722da1831f356e992700f72d6e95c39b231e0a1,23.2.0.0,Windows,VisualBasic,Process
+base64ai/uipath-samples,project.json,8c3a3fccb854e4fcb238505a4388de426439ddd0,20.4.1.0,Windows,VisualBasic,Library
+BiancaTest/MihaiRepo,project.json,b796280425854486a5740451f5bd2f796faa8c1c,22.4.4.0,Windows,VisualBasic,Process
+bogdanripa/Log-Me-In,project.json,cec9272c3343c693e6965de836d057c56036d63a,21.4.3.0,Legacy,VisualBasic,Process
+Chris1112220/uipath-ach-pdf-splitter,project.json,4587e2dd8def00dbea8229d0f0fec9e1c40adbed,25.10.17.0,Windows,CSharp,Process
+chyburiak/UiPath-CO2-EMISSIONS-DATA-PROCESS,project.json,8d637a9f381f62c6e867f874940a0d726f351b1f,25.0.176.0,Windows,VisualBasic,Process
+DongJoonHan/RPA,project.json,df188cda7a83bf30836643289bd9bcc29537f720,20.4.1.0,Classic,VisualBasic,Process
+fc205/DependencyViewer,project.json,e13b0072af89e1ef2fe95105447be95c94575abe,19.10.1.0,Classic,VisualBasic,Process
+finnash/Fbigtool-outreach,project.json,aec5eb764b87b695382ef7b8c0dab07b0cd0231c,25.0.166.0,Windows,VisualBasic,Process
+Gabyyi/Scraping-RPA-robot,project.json,5e40c454552f5438815b4bec05d5637525a57655,25.0.167.0,Windows,VisualBasic,Process
+GirishKolhe/RPA_UiPath-Generate-Yearly-Report,project.json,373003d926ae9f0c0b7f31958280e80fbad924ef,19.11.0.2,Classic,VisualBasic,Process
+guilhermegranato-uipath/github-actions,project.json,28e9c0648d87508e2612e685b9197d20fc00cf58,21.10.4.0,Legacy,VisualBasic,Process
+HAC-2020/rocket,project.json,b46ec6ada59b0a50ce4aa6ee869accdbb9860213,20.4.1.0,Classic,VisualBasic,Process
+hengkuanwee/UiPath_RPA_Dynamic_Drafting_Letters,project.json,13b8874f95ff41054430c836934a1bbba88f9b72,19.11.0.2,Classic,VisualBasic,Process
+hewanguipath/AIFab_Inference,project.json,ca20e01f39dc8d7f51ae725d114104952e22c7c8,19.8.0.0,Classic,VisualBasic,Process
+hieunt1402/Uipath-API-Integrator,project.json,0aff6ce57b8849b3a9b9a3ecee5fbf48f63cbb5d,22.10.3.0,Windows,VisualBasic,Process
+isaitej/04-06-2025,project.json,50aac4396173ee007da3a212d0a7725715d687a6,21.10.4.0,Windows,VisualBasic,Process
+JAYASIMMA/Patient_form,project.json,f5daf90a89c5d1824504942607c4cb4f1d6b14e3,24.10.7.0,Windows,VisualBasic,Process
+JoeIaquinto/UiPath-VidCreator,project.json,a15cfd3506044d11f28c4ec444dd36e2c2dbcdc8,19.7.0.74,Classic,VisualBasic,Process
+jsan956-ai/RPA-G4-2023,project.json,e72b70ff8a3442518ccdf4f1007260989de94259,21.10.7.0,Legacy,VisualBasic,Process
+koravel/UIPathDataTablePractice,project.json,222af0091ca8a258a9065cc2baffb90e0bfaa702,24.10.0.0,Windows,CSharp,Process
+kprainsa/scraping_Biman_Ticket,project.json,23c721a78e90bbea5f2e757abe6db3f6d492f80e,25.0.157.0,Windows,VisualBasic,Process
+labft3231/GenerateYearlyReport_Dispatcher,project.json,6bb990e4a1cb36a500fe708454edc17bd27854b1,19.10.4.0,Legacy,VisualBasic,Process
+LemonPepperSeasoning/Movie-Stats,project.json,911f64feb7d1ceb65f3ed668e4fcf8a2c773a01e,22.4.4.0,Legacy,VisualBasic,Process
+lezwon/uipath_deoldify,project.json,499254c10cdac080833428b1ace0b6789272926e,18.4.1.0,Classic,VisualBasic,Process (default)
+LowyShin/giipAgentUIP,project.json,5b67de72b849faf84dbaac6b457a763afb385f41,19.10.2.0,Windows,VisualBasic,Process
+LowyShin/lwrpa-uip-googlesuggest,project.json,b14907f2e8e0b7bb535af2116197f9832416bc09,19.7.0.0,Classic,VisualBasic,Process
+Make310/AUX-RPAChallenge_InputForm,project.json,9984cce1d8ade20dce925eb1ca32f51fc3c6eb52,25.0.157.0,Windows,VisualBasic,Process
+Manoj-0312/Room-Allocation-Automation,project.json,ef62f6ac463852926150e651e2d5c51e3c514687,25.0.166.0,Windows,VisualBasic,Process
+masaki-kumamoto/DocumentUnderstandingEvaluationTemplate,project.json,227fad3948a06b4d79f39862b9b5402d57a2f5d4,20.10.4.0,Legacy,VisualBasic,Tests
+masatomix/My_Attended_Framework,project.json,2b4c3e7856db2fa0b852ee1f7788e2247c90762a,18.2,Classic,VisualBasic (default),Process (default)
+MaxineXiong/Outlook-Email-Automation-RPA,project.json,19f08c8b80ad47a9542edc2c94a3210f4c4a5a77,23.8.0.0,Windows,VisualBasic,Process
+MaxineXiong/Roulette-Bot-RPA,project.json,6989765e1366b6732b8a7519c344c230138e8ed9,23.8.0.0,Windows,VisualBasic,Process
+MaxineXiong/Scraping-PDF-Invoices-with-RPA,project.json,d59c6d354cdc0bc6d464839b4387c1824259bcf2,23.8.0.0,Windows,VisualBasic,Process
+miyaichi/BatchJobController,project.json,fbebb425d5e5410e8e78913183cc7a4d644c0051,18.3.2.0,Classic,VisualBasic (default),Process (default)
+miyaichi/GenerateYearlyReportForVendor,project.json,a117cc42c0c76e9f671d3e01cfa5d2cdb4bec0b5,20.6.0.0,Classic,VisualBasic,Process
+miyaichi/JapaneseHoliday.Activities,project.json,a5bfffdaeab8aef9adf05307bd75bdf61a4ef0d4,18.3.3.0,Classic,VisualBasic (default),Process (default)
+miyaichi/ReFramework-Template-Excel-Transaction,project.json,0021972b2cdc180528fb6c410d4f14b895999468,18.3.3.0,Classic,VisualBasic (default),Process (default)
+miyaichi/ReFramework-Template-Mail-Transaction,project.json,878cb799d7d7d40b5e7a672c203d50b263dac6f0,18.3.1.0,Classic,VisualBasic (default),Process (default)
+miyaichi/Slack.Activities,project.json,debd79c7b1fd9e099d36cd507e026208afbb086f,18.3.2.0,Classic,VisualBasic (default),Process (default)
+miyaichi/UiPath-Log-Converter,project.json,b02da9009dbc4f197b626fb2b8aac759e85690d6,20.10.5.0,Classic,VisualBasic,Process
+miyaichi/Wrike.Activities,project.json,0af7106cd842a1a2b060adf58e3b4fd9ba7ef4fa,18.4.1.0,Classic,VisualBasic (default),Process (default)
+mtabishk/course-inventory-uipath-rpa,project.json,6140055188852030d2508fa59385c0374a7ba6ad,19.10.5.0,Classic,VisualBasic,Process
+nestorzamili/RPA-Grafana-Kibana,project.json,3f5dbb69b3afb7e86cd8ea2db15cbbb2467d56f7,24.4.0.0,Windows,VisualBasic,Process
+oddrationale/ACMESystem1.Activities,project.json,ea7891087607d011228e8c6484403de4c0205ae3,21.4.3.0,Legacy,VisualBasic,Library
+pdmorale/OCR_Statistics,project.json,dca056952261bc1dc07451542c209b425df433bd,19.7.0.0,Classic,VisualBasic,Process
+peteroyce/Library-Due-Date-Reminder-Automation,project.json,2f2ac859a809a6617a7b0e01afe229c3da8203d6,25.0.166.0,Windows,VisualBasic,Process
+renxlice/sms-link-ai-global,project.json,7073bf2e8d75621555c04d84b380ea6a9200a595,26.0.195.0,Windows,VisualBasic,Process
+Rotomator/email-automation,project.json,2746a7264dd7f5fc420f53cf8c4fa4f52deaa2b4,19.2.0.0,Classic,VisualBasic (default),Process (default)
+rpabotsworld/uipath-with-github-action,project.json,dbc391cee33d9d3c336bc2ae19d76675dd1d18fa,21.10.4.0,Legacy,VisualBasic,Process
+rpabotsworld/UiPathAzureDevOpsExample,project.json,945cd9bf655ffc59f7f1e9477b2f8b97d4ac900f,20.10.0.0,Legacy,VisualBasic,Process
+rpapub/ProlificQuasar,project.json,562014b286fc3f9429b59c0b1c6a1dfaefaba857,24.10.1.0,Windows,VisualBasic,Process
+sarahabbe/DU_Demo,project.json,3f0ad8b46b11a043851542e045885983fdf6483c,21.10.4.0,Legacy,VisualBasic,Process
+Saralapa/Save-Spotify-Playlists-By-Genre,project.json,de91de7ebb88efcc21264d5f0b1556cb37abcbe8,26.0.181.0,Windows,VisualBasic,Process
+sbentimui/cicd,project.json,e3e30ed2ebaf5c17a4a3474dd1faa9b322e50398,23.10.0.0,Windows,VisualBasic,Process
+ShonHarsh/BeastSaberManager,project.json,ac1f1407c8a48c4eea1d795289e457078cc32efa,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/Library-Tools,project.json,245721c1d372b7d4687cca5775a0d96409e86fb8,24.2.1.0,Windows,CSharp,Library
+ShonHarsh/RPADev-S02P01-ForEachIfStatement-WindowsLegacy,project.json,390da6f43dd91e0245348789d1c2a2a08fe67620,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S02P02-GenericValue-WindowsLegacy,project.json,c44b723075e581bb8bcd7eb5232d67044f923dd6,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S02P03-Switch,project.json,931f863b3a5153b6fc88879f97c81d0b2f036eb6,24.2.1.0,Windows,CSharp,Process
+ShonHarsh/RPADev-S03P03-Dictionaries-Integers,project.json,52a79d6ef9b697db3dd99fd5c7c23a16755e48ac,24.2.1.0,Windows,CSharp,Process
+ShonHarsh/RPADev-S03P03-Dictionaries-Integers-WindowsLegacy,project.json,cda56457f43b82f66f4d6fea0c9ac1d217d7a21e,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S03P04-Dictionaries-Doubles-WindowsLegacy,project.json,ccf41283fc71903792018933ad7f754b7d3ff567,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S03P05-InputValidation-WindowsLegacy,project.json,b46ca40907f9932b2f6e18563775b5c485dfcda3,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S03P07-ExtractEmailAddress-WindowsLegacy,project.json,508928f925a21a86809f9f3c89f3f2836f839bce,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S04P01-CalculatingSums-WindowsLegacy,project.json,2431f3ec2be45874bd842870540323dd77ae00e7,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S05P03-InputActions-WindowsLegacy,project.json,4ada49223cc5bbba8ab7f12edc53093ab2885b04,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S05P04-OutputActions-WindowsLegacy,project.json,9b6b2342a173059a96833ae18608bf9b1cbfbfbe,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S05P05-DataScraping-WindowsLegacy,project.json,9c7d16cbba4cc00c39e9d8787367ded3f61ddb33,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S06P02-SetData-WindowsLegacy,project.json,de3f8de5eb272717b2d70d517e194cfb1823f440,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S06P03-Highlight-TypeItems,project.json,0fee4fa7ef343d5753109cb2350e50dd900dbb47,24.2.1.0,Windows,CSharp,Process
+ShonHarsh/RPADev-S06P03-Highlight-TypeItems-VB,project.json,5a18d2617ec401457f520d2379ce90d4b5908f39,24.2.1.0,Windows,VisualBasic,Process
+ShonHarsh/RPADev-S06P03-Highlight-TypeItems-WindowsLegacy,project.json,d44c16b1584fa40afa88d56803a96b9f4f51bbd3,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/RPADev-S07P02-StateMachines-WindowsLegacy,project.json,f845a7428c403133c6be3ff40d1ffc6af9835f82,21.4.4.0,Legacy,CSharp,Process
+ShonHarsh/UiPath-Program-Start-Up-Bot,project.json,d55cfab29dc76b9992899713ea46e77cff1d366c,24.10.0.0,Windows,CSharp,Process
+Sundsvallskommun/RPA-elevresor,project.json,e59cade814ecab1e7a43b38fe4bbfe3fe1e84192,20.10.4.0,Legacy,VisualBasic,Process
+SuneetPatil/IRCTC-tatkal-booking,project.json,4b7ad8cd0bde21b1b88361aa4d5fe2497fd2643a,19.4.2.0,Classic,VisualBasic (default),Process (default)
+sunilsm7/calculate_client_security_hash,project.json,ee45c49864a1e0efa240037f075105d2ae81eaf7,20.4.1.0,Classic,VisualBasic,Process
+Tharunvikas55/RPA_Certificate_generator,project.json,b46fd55e0b614c59f72c73f932b0c50d08f4bdba,24.10.1.0,Windows,VisualBasic,Process
+tosigoto/UiPath-SimpleOCR,project.json,10c06440db796f9aba1b76fc2e3dce450d7b0b5f,24.10.4.0,Windows,VisualBasic,Process
+UiPath-Services/Prebuilts_AddBookmarksToPdf,project.json,97bfa143df3468bc0eaca6aa87dc5601dfa328e7,19.10.1.0,Legacy,VisualBasic,Process
+UiPath-TAM-Team/RPATestingAzurePublic,project.json,15f8c2504cb9eac276c928cf86d7ec143de5f1b9,21.4.4.0,Legacy,VisualBasic,Process
+UrangBanua/AutoInputData_Renja_AppFMIS,project.json,63d1fea1de6a8b2793490f3f68de9fe717b0ae50,21.10.4.0,Legacy,VisualBasic,Process
+VedaSwaroop01/GenAIAutomationBot,project.json,13737fe542fb8718da6d5151d2b9863bc1ee9ebf,24.10.1.0,Windows,VisualBasic,Process
+whooaaapppp/VendorDetailPerformer,project.json,4040a50f08437bfd14e67b95ba9dbe4e2984c173,19.4.2.0,Classic,VisualBasic (default),Process (default)
+whooaaapppp/yearlyreport-uipath,project.json,b9d45805bdc4a881cfc5d8ed66f5704e5886c3d5,19.4.0.0,Classic,VisualBasic (default),Process (default)
+xsa-dev/yamarket-top-notebooks,project.json,4452b2490108d13a5d4f677b75582eb74994bb37,20.10.2.0,Classic,CSharp,Process

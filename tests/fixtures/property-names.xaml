@@ -1,0 +1,52 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="PropertyNames"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:demo="clr-namespace:Demo.Activities;assembly=Demo.Activities"
+ xmlns:mca="clr-namespace:Microsoft.CSharp.Activities;assembly=System.Activities"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+ xmlns:ui="http://schemas.uipath.com/workflow/activities"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Made-up test input.
+       1. "Read nodes" is a made-up activity whose property names match properties of an XML element
+          (Attributes, ChildNodes, ParentNode ...). Real activities do this: UiPath's Get XML Node
+          Attributes has an "Attributes" property. The converter must still read the file.
+       2. C# projects give every expression element (CSharpValue, CSharpReference) a layout IdRef, and
+          Multiple Assign items (AssignOperation) have one too. None of these are activities, so none
+          may be reported as an unrecognised activity type. -->
+  <Flowchart DisplayName="Property names" sap2010:WorkflowViewState.IdRef="Flowchart_1">
+    <Flowchart.StartNode>
+      <FlowStep x:Name="__ReferenceID0" sap2010:WorkflowViewState.IdRef="FlowStep_1">
+        <demo:ReadNodes DisplayName="Read nodes" Attributes="[nodeAttributes]" ChildNodes="[children]" ParentNode="[parent]" InnerText="[text]" LocalName="[name]" NamespaceURI="[uri]" NodeType="[kind]" Value="[value]" Name="[label]" sap2010:WorkflowViewState.IdRef="ReadNodes_1" />
+        <FlowStep.Next>
+          <FlowStep x:Name="__ReferenceID1" sap2010:WorkflowViewState.IdRef="FlowStep_2">
+            <Sequence DisplayName="Set values" sap2010:WorkflowViewState.IdRef="Sequence_1">
+              <Assign DisplayName="Set total" sap2010:WorkflowViewState.IdRef="Assign_1">
+                <Assign.To>
+                  <OutArgument x:TypeArguments="x:Int32">
+                    <mca:CSharpReference x:TypeArguments="x:Int32" sap2010:WorkflowViewState.IdRef="CSharpReference`1_1">total</mca:CSharpReference>
+                  </OutArgument>
+                </Assign.To>
+                <Assign.Value>
+                  <InArgument x:TypeArguments="x:Int32">
+                    <mca:CSharpValue x:TypeArguments="x:Int32" sap2010:WorkflowViewState.IdRef="CSharpValue`1_1">count + 1</mca:CSharpValue>
+                  </InArgument>
+                </Assign.Value>
+              </Assign>
+              <ui:MultipleAssign DisplayName="Set both" sap2010:WorkflowViewState.IdRef="MultipleAssign_1">
+                <ui:MultipleAssign.AssignOperations>
+                  <scg:List xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib" x:TypeArguments="ui:AssignOperation" Capacity="2">
+                    <ui:AssignOperation sap2010:WorkflowViewState.IdRef="AssignOperation_1" />
+                    <ui:AssignOperation sap2010:WorkflowViewState.IdRef="AssignOperation_2" />
+                  </scg:List>
+                </ui:MultipleAssign.AssignOperations>
+              </ui:MultipleAssign>
+            </Sequence>
+          </FlowStep>
+        </FlowStep.Next>
+      </FlowStep>
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <x:Reference>__ReferenceID1</x:Reference>
+  </Flowchart>
+</Activity>

@@ -436,6 +436,19 @@ try {
         Assert-CleanArrows $r.DrawioFiles[0] $f
     }
 
+    # --- Activity properties named like XML properties; expressions with layout IDs ----------------------
+    Write-Host "`nProperty names and expressions"
+    $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'property-names.xaml'); OutputPath = (Join-Path $work 'property-names') }
+    Assert ($r.DrawioFiles.Count -eq 1) 'converts an activity with properties named Attributes, ChildNodes, ParentNode, InnerText and so on (this crashed on a real project)'
+    $d = Test-DrawioStructure $r.DrawioFiles[0]
+    $labels = Get-AllLabels $d.Doc
+    Assert ($labels -contains "Read nodes`n[ReadNodes]") 'still draws that activity, as an unrecognised step with its type'
+    Assert ($labels -contains 'Set values') 'draws the step that holds the sequence'
+    $report = [System.IO.File]::ReadAllText($r.ReportFile)
+    $unknownSection = [regex]::Match($report, '(?ms)^Activity types not recognised.*?(?=\r?\n\r?\n)').Value
+    Assert ($unknownSection -match 'ReadNodes - 1 in property-names\.xaml') 'lists the made-up activity as unrecognised'
+    Assert ($unknownSection -notmatch 'CSharpValue|CSharpReference|AssignOperation|VisualBasic') 'does not list expressions or Multiple Assign items as unrecognised activities'
+
     # --- Switch cases in every written form -----------------------------------------------------------
     Write-Host "`nSwitch case forms"
     $r = Invoke-Converter @{ Path = (Join-Path $fixtures 'switch-case-forms.xaml'); OutputPath = (Join-Path $work 'switch') }

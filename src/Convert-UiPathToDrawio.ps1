@@ -73,8 +73,12 @@ $script:NonActivityNs = @(
     'http://schemas.openxmlformats.org/markup-compatibility/2006'
 )
 
-# Elements that carry a DisplayName or IdRef but are structure, not activities.
-$script:StructuralNames = @('State', 'Transition', 'FlowStep', 'Catch', 'ActivityAction', 'ActivityFunc')
+# Elements that carry a DisplayName or IdRef but are not activities: workflow structure, expressions
+# (C# projects give every expression an IdRef), and the items of a Multiple Assign.
+$script:StructuralNames = @(
+    'State', 'Transition', 'FlowStep', 'Catch', 'ActivityAction', 'ActivityFunc',
+    'CSharpValue', 'CSharpReference', 'VisualBasicValue', 'VisualBasicReference', 'Literal', 'AssignOperation'
+)
 
 # Activity types the converter knows. Anything else is listed in the report as not recognised.
 $script:KnownActivities = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -145,15 +149,20 @@ $script:RowGap = 4
 
 # ---------------------------------------------------------------------------
 # Reading XAML. Elements are matched by local name, never by namespace prefix.
+#
+# XML properties are read through .NET's accessors ($node.get_LocalName(), .get_Attributes() ...),
+# never as $node.LocalName. PowerShell lets an attribute or child element with the same name hide the
+# real property: UiPath's Get XML Node Attributes activity has an "Attributes" property, so
+# $element.Attributes returned that text instead of the attribute list, and the conversion failed.
 # ---------------------------------------------------------------------------
 
 function Get-ChildElement {
     param($Parent, [string]$LocalName)
     $list = New-Object System.Collections.Generic.List[object]
     if ($null -eq $Parent) { return ,$list }
-    foreach ($n in $Parent.ChildNodes) {
-        if ($n.NodeType -ne [System.Xml.XmlNodeType]::Element) { continue }
-        if ([string]::IsNullOrEmpty($LocalName) -or $n.LocalName -eq $LocalName) { $list.Add($n) }
+    foreach ($n in $Parent.get_ChildNodes()) {
+        if ($n.get_NodeType() -ne [System.Xml.XmlNodeType]::Element) { continue }
+        if ([string]::IsNullOrEmpty($LocalName) -or $n.get_LocalName() -eq $LocalName) { $list.Add($n) }
     }
     return ,$list
 }
@@ -161,12 +170,12 @@ function Get-ChildElement {
 function Get-Attr {
     # Namespace: 'None' = unqualified attribute, 'Xaml' = the XAML language namespace (x:), 'Any' = any.
     param($Element, [string]$LocalName, [string]$Namespace = 'None')
-    if ($null -eq $Element -or $null -eq $Element.Attributes) { return $null }
-    foreach ($a in $Element.Attributes) {
-        if ($a.LocalName -ne $LocalName) { continue }
+    if ($null -eq $Element -or $null -eq $Element.get_Attributes()) { return $null }
+    foreach ($a in $Element.get_Attributes()) {
+        if ($a.get_LocalName() -ne $LocalName) { continue }
         if ($Namespace -eq 'Any') { return $a.Value }
-        if ($Namespace -eq 'Xaml' -and $a.NamespaceURI -eq $script:XamlNs) { return $a.Value }
-        if ($Namespace -eq 'None' -and [string]::IsNullOrEmpty($a.NamespaceURI)) { return $a.Value }
+        if ($Namespace -eq 'Xaml' -and $a.get_NamespaceURI() -eq $script:XamlNs) { return $a.Value }
+        if ($Namespace -eq 'None' -and [string]::IsNullOrEmpty($a.get_NamespaceURI())) { return $a.Value }
     }
     return $null
 }
@@ -188,23 +197,23 @@ function Test-SameNode {
 
 function Get-NearestAncestor {
     param($Element, [string[]]$LocalNames)
-    $p = $Element.ParentNode
-    while ($null -ne $p -and $p.NodeType -eq [System.Xml.XmlNodeType]::Element) {
-        if ($LocalNames -contains $p.LocalName) { return $p }
-        $p = $p.ParentNode
+    $p = $Element.get_ParentNode()
+    while ($null -ne $p -and $p.get_NodeType() -eq [System.Xml.XmlNodeType]::Element) {
+        if ($LocalNames -contains $p.get_LocalName()) { return $p }
+        $p = $p.get_ParentNode()
     }
     return $null
 }
 
 function Test-IsXamlReference {
     param($Element)
-    return ($Element.LocalName -eq 'Reference' -and $Element.NamespaceURI -eq $script:XamlNs)
+    return ($Element.get_LocalName() -eq 'Reference' -and $Element.get_NamespaceURI() -eq $script:XamlNs)
 }
 
 function Test-IsXamlElement {
     # True for an element of the XAML language itself, such as x:Reference, x:Key or x:Null.
     param($Element, [string]$LocalName)
-    return ($Element.LocalName -eq $LocalName -and $Element.NamespaceURI -eq $script:XamlNs)
+    return ($Element.get_LocalName() -eq $LocalName -and $Element.get_NamespaceURI() -eq $script:XamlNs)
 }
 
 function Get-ReferenceText {
@@ -215,8 +224,8 @@ function Get-ReferenceText {
     $name = Get-Attr $Element 'Name'
     if (-not [string]::IsNullOrWhiteSpace($name)) { return $name.Trim() }
     $text = ''
-    foreach ($n in $Element.ChildNodes) {
-        if ($n.NodeType -eq [System.Xml.XmlNodeType]::Text -or $n.NodeType -eq [System.Xml.XmlNodeType]::CDATA) { $text += $n.Value }
+    foreach ($n in $Element.get_ChildNodes()) {
+        if ($n.get_NodeType() -eq [System.Xml.XmlNodeType]::Text -or $n.get_NodeType() -eq [System.Xml.XmlNodeType]::CDATA) { $text += $n.Value }
     }
     return $text.Trim()
 }
@@ -230,7 +239,7 @@ function Get-XamlKey {
     if ($null -eq $key) {
         foreach ($c in (Get-ChildElement $Element 'Key')) {
             if (-not (Test-IsXamlElement $c 'Key')) { continue }
-            $key = $c.InnerText.Trim()
+            $key = $c.get_InnerText().Trim()
             foreach ($inner in (Get-ChildElement $c 'Null')) {
                 if (Test-IsXamlElement $inner 'Null') { $key = '{x:Null}' }
             }
@@ -290,8 +299,8 @@ function Get-ActivityChild {
     # The first child that is an activity: not a property element (Name.Property) and not x: markup.
     param($Element)
     foreach ($c in (Get-ChildElement $Element)) {
-        if ($c.LocalName.Contains('.')) { continue }
-        if ($c.NamespaceURI -eq $script:XamlNs) { continue }
+        if ($c.get_LocalName().Contains('.')) { continue }
+        if ($c.get_NamespaceURI() -eq $script:XamlNs) { continue }
         return $c
     }
     return $null
@@ -302,7 +311,7 @@ function Get-PropertyText {
     param($Element, [string]$AttributeName, [string]$PropertyName)
     $v = Get-Attr $Element $AttributeName
     if ($null -ne $v) { return $v.Trim() }
-    foreach ($p in (Get-ChildElement $Element $PropertyName)) { return $p.InnerText.Trim() }
+    foreach ($p in (Get-ChildElement $Element $PropertyName)) { return $p.get_InnerText().Trim() }
     return $null
 }
 
@@ -361,14 +370,14 @@ function Get-ViewState {
     if ($null -eq $holder) {
         $id = Get-Attr $Element 'WorkflowViewState.IdRef' 'Any'
         if (-not $id) {
-            foreach ($c in (Get-ChildElement $Element 'WorkflowViewState.IdRef')) { $id = $c.InnerText.Trim() }
+            foreach ($c in (Get-ChildElement $Element 'WorkflowViewState.IdRef')) { $id = $c.get_InnerText().Trim() }
         }
         if ($id -and $Map.ContainsKey($id)) { $holder = $Map[$id] }
     }
     if ($null -eq $holder) { return $result }
     foreach ($e in $holder.SelectNodes('.//*')) {
         $k = Get-Attr $e 'Key' 'Xaml'
-        if ($k) { $result[$k] = $e.InnerText.Trim() }
+        if ($k) { $result[$k] = $e.get_InnerText().Trim() }
     }
     return $result
 }
@@ -559,19 +568,19 @@ function Read-Workflow {
     # Activity.Implementation element). A file whose top element is itself a known activity is drawn
     # from that. Anything else is some other kind of XML, and is reported rather than guessed at.
     $top = $wf.Doc.DocumentElement
-    if ($top.LocalName -eq 'Activity') {
+    if ($top.get_LocalName() -eq 'Activity') {
         $wf.Root = Get-ActivityChild $top
         if ($null -eq $wf.Root) {
             foreach ($impl in (Get-ChildElement $top 'Activity.Implementation')) { $wf.Root = Get-ActivityChild $impl }
         }
     }
-    elseif ($script:KnownActivities.Contains($top.LocalName) -and $script:NonActivityNs -notcontains $top.NamespaceURI) {
+    elseif ($script:KnownActivities.Contains($top.get_LocalName()) -and $script:NonActivityNs -notcontains $top.get_NamespaceURI()) {
         $wf.Root = $top
     }
     else {
         $wf.Kind = 'NotWorkflow'
         $wf.KindLabel = 'not a workflow'
-        $wf.TopElement = $top.LocalName
+        $wf.TopElement = $top.get_LocalName()
         return $wf
     }
     if ($null -eq $wf.Root) {
@@ -579,10 +588,10 @@ function Read-Workflow {
         $wf.KindLabel = 'empty'
     }
     else {
-        switch ($wf.Root.LocalName) {
+        switch ($wf.Root.get_LocalName()) {
             'StateMachine' { $wf.Kind = 'StateMachine'; $wf.KindLabel = 'state machine' }
             'Flowchart' { $wf.Kind = 'Flowchart'; $wf.KindLabel = 'flowchart' }
-            default { $wf.Kind = 'Other'; $wf.KindLabel = $wf.Root.LocalName.ToLowerInvariant() }
+            default { $wf.Kind = 'Other'; $wf.KindLabel = $wf.Root.get_LocalName().ToLowerInvariant() }
         }
     }
 
@@ -592,10 +601,10 @@ function Read-Workflow {
 
     # Inventory of activity types, to report the ones the converter doesn't recognise.
     foreach ($e in $wf.Doc.SelectNodes('//*')) {
-        if ((Test-SameNode $e $top) -and $top.LocalName -eq 'Activity') { continue }   # the file's wrapper, not an activity
-        $ln = $e.LocalName
+        if ((Test-SameNode $e $top) -and $top.get_LocalName() -eq 'Activity') { continue }   # the file's wrapper, not an activity
+        $ln = $e.get_LocalName()
         if ($ln.Contains('.')) { continue }
-        if ($script:NonActivityNs -contains $e.NamespaceURI) { continue }
+        if ($script:NonActivityNs -contains $e.get_NamespaceURI()) { continue }
         if ($script:StructuralNames -contains $ln) { continue }
         if ($null -eq (Get-Attr $e 'DisplayName') -and $null -eq (Get-Attr $e 'WorkflowViewState.IdRef' 'Any')) { continue }
         $wf.ActivityCount++
@@ -750,18 +759,18 @@ function Get-StateMachineGraph {
     # Invoked workflows: each belongs to the nearest state (Entry/Exit) or transition (Action/Trigger) of this machine.
     foreach ($inv in $Workflow.Invokes) {
         $owner = $null
-        $p = $inv.Element.ParentNode
-        while ($null -ne $p -and $p.NodeType -eq [System.Xml.XmlNodeType]::Element) {
+        $p = $inv.Element.get_ParentNode()
+        while ($null -ne $p -and $p.get_NodeType() -eq [System.Xml.XmlNodeType]::Element) {
             if (Test-SameNode $p $Machine) { break }
-            if ($p.LocalName -eq 'State' -or $p.LocalName -eq 'Transition') {
+            if ($p.get_LocalName() -eq 'State' -or $p.get_LocalName() -eq 'Transition') {
                 if (Test-SameNode (Get-NearestAncestor $p @('StateMachine')) $Machine) { $owner = $p; break }
             }
-            $p = $p.ParentNode
+            $p = $p.get_ParentNode()
         }
         if ($null -eq $owner) { continue }
         $suffix = ''
         $stateEl = $owner
-        if ($owner.LocalName -eq 'Transition') {
+        if ($owner.get_LocalName() -eq 'Transition') {
             $suffix = ' (on "' + (Get-DisplayName $owner 'transition') + '")'
             $stateEl = Get-NearestAncestor $owner @('State')
         }
@@ -830,7 +839,7 @@ function Get-StateMachineGraph {
 
 function Get-StepLabel {
     param($Activity)
-    $type = $Activity.LocalName
+    $type = $Activity.get_LocalName()
     return (Get-DisplayName $Activity $type)
 }
 
@@ -864,13 +873,13 @@ function Get-FlowchartGraph {
         $i++
         $key = 'n' + $i
         $vs = Get-ViewState $e $vsMap
-        switch ($e.LocalName) {
+        switch ($e.get_LocalName()) {
             'FlowStep' {
                 $act = Get-ActivityChild $e
                 if ($null -eq $act) {
                     $node = New-Node $key 'Box' '(empty step)' $script:Style.Step $e
                 }
-                elseif ($act.LocalName -eq 'InvokeWorkflowFile') {
+                elseif ($act.get_LocalName() -eq 'InvokeWorkflowFile') {
                     $inv = $null
                     [void]$invokeByElement.TryGetValue($act, [ref]$inv)
                     $row = New-InvokeRow $inv $Context ''
@@ -879,14 +888,14 @@ function Get-FlowchartGraph {
                     if ($row.Style -eq $script:Style.RowComputed) { $node.Style = $script:Style.InvokeComputed }
                     $node.Link = $row.Link
                 }
-                elseif (-not $script:KnownActivities.Contains($act.LocalName)) {
-                    $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n[" + $act.LocalName + ']') $script:Style.Unknown $e
+                elseif (-not $script:KnownActivities.Contains($act.get_LocalName())) {
+                    $node = New-Node $key 'Box' ((Get-StepLabel $act) + "`n[" + $act.get_LocalName() + ']') $script:Style.Unknown $e
                 }
                 else {
                     $label = Get-StepLabel $act
-                    if ($act.LocalName -eq 'Flowchart' -or $act.LocalName -eq 'StateMachine') {
-                        $label = $label + ' (nested ' + $act.LocalName.ToLowerInvariant() + ')'
-                        $warnings.Add('Step "' + (Get-StepLabel $act) + '" holds a nested ' + $act.LocalName.ToLowerInvariant() + '; it is not expanded in version 1.')
+                    if ($act.get_LocalName() -eq 'Flowchart' -or $act.get_LocalName() -eq 'StateMachine') {
+                        $label = $label + ' (nested ' + $act.get_LocalName().ToLowerInvariant() + ')'
+                        $warnings.Add('Step "' + (Get-StepLabel $act) + '" holds a nested ' + $act.get_LocalName().ToLowerInvariant() + '; it is not expanded in version 1.')
                     }
                     $node = New-Node $key 'Box' $label $script:Style.Step $e
                 }
@@ -917,11 +926,11 @@ function Get-FlowchartGraph {
     # Invoked workflows inside a step's activity (for example a Sequence) are listed on the step.
     foreach ($inv in $Workflow.Invokes) {
         $owner = $null
-        $p = $inv.Element.ParentNode
-        while ($null -ne $p -and $p.NodeType -eq [System.Xml.XmlNodeType]::Element) {
+        $p = $inv.Element.get_ParentNode()
+        while ($null -ne $p -and $p.get_NodeType() -eq [System.Xml.XmlNodeType]::Element) {
             if (Test-SameNode $p $Chart) { break }
-            if ($p.LocalName -eq 'FlowStep' -and (Test-SameNode (Get-NearestAncestor $p @('Flowchart')) $Chart)) { $owner = $p; break }
-            $p = $p.ParentNode
+            if ($p.get_LocalName() -eq 'FlowStep' -and (Test-SameNode (Get-NearestAncestor $p @('Flowchart')) $Chart)) { $owner = $p; break }
+            $p = $p.get_ParentNode()
         }
         if ($null -eq $owner) { continue }
         if (Test-SameNode (Get-ActivityChild $owner) $inv.Element) { continue }
@@ -965,7 +974,7 @@ function Get-FlowchartGraph {
     foreach ($e in $elements) {
         $node = Find-NodeByElement $nodes $e
         $vs = Get-ViewState $e $vsMap
-        switch ($e.LocalName) {
+        switch ($e.get_LocalName()) {
             'FlowStep' {
                 Add-FlowEdge $node (Resolve-Target $e 'Next' 'FlowStep.Next' $nameMap) '' (Get-StudioPoints $vs @('ConnectorLocation')) 'next step'
             }
@@ -987,11 +996,11 @@ function Get-FlowchartGraph {
                 foreach ($c in (Get-ChildElement $e 'FlowSwitch.Cases')) { $caseHolders.Add($c) }
                 foreach ($holder in $caseHolders) {
                     foreach ($c in (Get-ChildElement $holder)) {
-                        if ($c.LocalName.Contains('.')) { continue }          # property elements, such as FlowSwitch.Default
+                        if ($c.get_LocalName().Contains('.')) { continue }          # property elements, such as FlowSwitch.Default
                         if (Test-IsXamlElement $c 'Key') { continue }         # this switch's own key, when it is itself a case
                         $caseKey = Get-XamlKey $c
                         if ($null -eq $caseKey) {
-                            if ((Test-IsXamlReference $c) -or $flowNames -contains $c.LocalName) {
+                            if ((Test-IsXamlReference $c) -or $flowNames -contains $c.get_LocalName()) {
                                 $warnings.Add('A case of switch "' + $node.Label + '" has no key, so its branch is not drawn.')
                             }
                             continue
@@ -1008,7 +1017,7 @@ function Get-FlowchartGraph {
 
     $steps = 0; $decisions = 0; $switches = 0
     foreach ($e in $elements) {
-        switch ($e.LocalName) { 'FlowStep' { $steps++ } 'FlowDecision' { $decisions++ } 'FlowSwitch' { $switches++ } }
+        switch ($e.get_LocalName()) { 'FlowStep' { $steps++ } 'FlowDecision' { $decisions++ } 'FlowSwitch' { $switches++ } }
     }
     $summary = (Format-Count $steps 'step' 'steps') + ', ' + (Format-Count $decisions 'decision' 'decisions') + ', ' + (Format-Count $switches 'switch' 'switches')
     return @{ Nodes = $nodes; Edges = $edges; StartKeys = @('start'); Warnings = $warnings; Summary = $summary }
@@ -1673,7 +1682,7 @@ function New-WorkflowPage {
 
     # Sequences and anything else: a summary card listing the workflows the file invokes.
     $rootLabel = 'Empty workflow'
-    if ($null -ne $Workflow.Root) { $rootLabel = Get-DisplayName $Workflow.Root $Workflow.Root.LocalName }
+    if ($null -ne $Workflow.Root) { $rootLabel = Get-DisplayName $Workflow.Root $Workflow.Root.get_LocalName() }
     $node = New-Node 'root' 'Card' $rootLabel $script:Style.StepCard $Workflow.Root
     foreach ($inv in $Workflow.Invokes) { Add-UniqueRow $node (New-InvokeRow $inv $Context '') }
     if ($node.Rows.Count -eq 0) { $node.Rows.Add((New-Row 'Invokes no other workflows' $script:Style.RowPlain $null)) }

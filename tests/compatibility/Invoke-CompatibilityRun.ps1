@@ -1,0 +1,251 @@
+<#
+.SYNOPSIS
+    Converts a corpus of public UiPath projects and records how the converter copes with each.
+
+.DESCRIPTION
+    For every project listed in corpus.csv, this script:
+      1. downloads only the .xaml and project.json files of the repository, at the exact commit listed,
+         into a work folder outside this repository (Git is needed for this step only);
+      2. converts the project in PowerShell 7 and in Windows PowerShell 5.1, each in its own process;
+      3. checks the diagrams (well-formed XML, unique ids, arrows that point at real shapes, plain
+         numbers, and on automatically laid-out pages: no arrow through a box, no shared paths, no
+         overlapping labels), and compares the two PowerShell versions' output byte for byte;
+      4. writes results.csv and summary.txt to the work folder.
+
+    The downloaded projects belong to their authors and are never copied into this repository. Nothing
+    in them is executed: only XAML and JSON files are checked out, and the converter reads them as data.
+
+.PARAMETER WorkFolder
+    Where to put the downloaded projects and the results. Default: a folder in the temp directory.
+
+.PARAMETER Corpus
+    The list of projects. Default: corpus.csv next to this script.
+
+.EXAMPLE
+    pwsh -File .\tests\compatibility\Invoke-CompatibilityRun.ps1
+#>
+[CmdletBinding()]
+param(
+    [string]$WorkFolder = (Join-Path ([System.IO.Path]::GetTempPath()) 'uipath-to-drawio-compatibility'),
+    [string]$Corpus = (Join-Path $PSScriptRoot 'corpus.csv')
+)
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$converter = Join-Path $repoRoot 'src\Convert-UiPathToDrawio.ps1'
+$testScript = Join-Path $repoRoot 'tests\Test-Converter.ps1'
+$sources = Join-Path $WorkFolder 'projects'
+$outputs = Join-Path $WorkFolder 'output'
+foreach ($d in @($sources, $outputs)) { [void](New-Item -ItemType Directory -Force -Path $d) }
+
+# Reuse the diagram checks from the test script, without running its tests.
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($testScript, [ref]$null, [ref]$null)
+foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+    if (@('Get-StyleNumber', 'Get-ArrowProblems', 'Get-CellInfo', 'Get-Label', 'Read-Drawio') -contains $f.Name) {
+        . ([scriptblock]::Create($f.Extent.Text))
+    }
+}
+
+function Get-Section {
+    # The entries under one heading of a conversion report.
+    param([string]$Report, [string]$Heading)
+    $m = [regex]::Match($Report, '(?ms)^' + [regex]::Escape($Heading) + '[^\r\n]*\r?\n-+\r?\n(.*?)(\r?\n\r?\n|\z)')
+    if (-not $m.Success) { return @() }
+    return @($m.Groups[1].Value -split '\r?\n' | Where-Object { $_ -and $_.Trim() -ne 'None' -and $_ -notmatch '^  (These are not|Where these appear)' } | ForEach-Object { $_.Trim() })
+}
+
+function Get-Repository {
+    # Shallow, sparse fetch of one commit: only .xaml and project.json files are checked out.
+    # Folders are named after the commit, not the repository, to stay within Windows' path-length limit.
+    param([string]$Name, [string]$Commit)
+    $dir = Join-Path $sources $Commit.Substring(0, 12)
+    if (Test-Path -LiteralPath (Join-Path $dir '.git')) {
+        if ((& git -C $dir rev-parse HEAD 2>$null) -eq $Commit) { return $dir }
+    }
+    else {
+        [void](New-Item -ItemType Directory -Force -Path $dir)
+        & git -C $dir init --quiet
+        & git -C $dir config core.longpaths true
+        & git -C $dir remote add origin "https://github.com/$Name.git"
+        & git -C $dir sparse-checkout set --no-cone '*.xaml' '*.XAML' 'project.json' '**/project.json' 2>$null
+    }
+    & git -C $dir -c protocol.version=2 fetch --quiet --depth 1 --filter=blob:none origin $Commit 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    & git -C $dir checkout --quiet --force FETCH_HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    return $dir
+}
+
+function ConvertFrom-GitPath {
+    # Git prints a path with non-ASCII characters in quotes, with each UTF-8 byte as an octal escape
+    # ("App_\354\213\244..."). Decoding that here keeps the result independent of the console's code
+    # page, which otherwise garbles such names when PowerShell reads Git's output.
+    param([string]$Text)
+    if (-not $Text.StartsWith('"')) { return $Text }
+    $inner = $Text.Substring(1, $Text.Length - 2)
+    $bytes = New-Object System.Collections.Generic.List[byte]
+    $i = 0
+    while ($i -lt $inner.Length) {
+        $c = $inner[$i]
+        if ($c -eq '\' -and $i + 1 -lt $inner.Length) {
+            $next = $inner[$i + 1]
+            if ($next -match '[0-7]' -and $i + 3 -lt $inner.Length + 1) {
+                $bytes.Add([Convert]::ToByte($inner.Substring($i + 1, 3), 8)); $i += 4; continue
+            }
+            $map = @{ 'n' = 10; 't' = 9; '"' = 34; '\' = 92 }
+            if ($map.ContainsKey([string]$next)) { $bytes.Add([byte]$map[[string]$next]); $i += 2; continue }
+        }
+        foreach ($b in [System.Text.Encoding]::UTF8.GetBytes([string]$c)) { $bytes.Add($b) }
+        $i++
+    }
+    return [System.Text.Encoding]::UTF8.GetString($bytes.ToArray())
+}
+
+function Test-Download {
+    # Confirms the folder holds exactly the pinned commit, and that every .xaml and project.json file
+    # that commit contains is on disk. A checkout can drop files without failing, for example when a
+    # path is too long for Windows, so this is checked rather than assumed.
+    param([string]$Dir, [string]$Commit)
+    $head = (& git -C $Dir rev-parse HEAD 2>$null)
+    if ($head -ne $Commit) { return @{ Complete = $false; Expected = 0; Missing = 0; Problem = "checked out $head instead of the pinned commit" } }
+    $expected = @(& git -C $Dir -c core.quotepath=on ls-tree -r --name-only HEAD 2>$null | ForEach-Object { ConvertFrom-GitPath $_ } | Where-Object { $_ -match '(\.xaml|(^|/)project\.json)$' })
+    $missing = @($expected | Where-Object { -not (Test-Path -LiteralPath (Join-Path $Dir ($_ -replace '/', '\'))) })
+    $problem = ''
+    if ($missing.Count -gt 0) { $problem = "incomplete download: $($missing.Count) of $($expected.Count) files missing, for example $($missing[0])" }
+    return @{ Complete = ($missing.Count -eq 0); Expected = $expected.Count; Missing = $missing.Count; Problem = $problem }
+}
+
+$rows = @(Import-Csv -LiteralPath $Corpus)
+$results = New-Object System.Collections.Generic.List[object]
+$i = 0
+foreach ($p in $rows) {
+    $i++
+    $id = ($p.Repository -replace '/', '__') + '__' + (($p.ProjectPath -replace '/', '_') -replace '_?project\.json$', '')
+    $row = [ordered]@{
+        Id = $id; Repository = $p.Repository; ProjectPath = $p.ProjectPath; Commit = $p.Commit
+        StudioVersion = $p.StudioVersion; TargetFramework = $p.TargetFramework; ExpressionLanguage = $p.ExpressionLanguage; OutputType = $p.OutputType
+        Fetched = $false; Complete = $false; MissingFromDownload = 0; XamlFiles = 0; Exit7 = ''; Exit51 = ''; Seconds7 = ''; Seconds51 = ''; Error = ''
+        SameIn51And7 = ''; Workflows = 0; StateMachines = 0; Flowcharts = 0; SummaryOnly = 0; StudioLayout = 0; AutoLayout = 0
+        Missing = 0; Outside = 0; RunTime = 0; UnrecognisedTypes = ''; Warnings = 0; Unreadable = 0; NotWorkflows = 0; SkippedFolders = 0
+        CheckProblems = 0; CheckDetails = ''
+    }
+    $short = '{0:000}' -f $i     # output folder name; kept short for the same path-length reason
+    $row.Id = "$short $id"
+    Write-Host ('[{0}/{1}] {2}' -f $i, $rows.Count, $p.Repository)
+    $dir = Get-Repository $p.Repository $p.Commit
+    if ($null -eq $dir) { $row.Error = 'could not fetch the listed commit'; $results.Add([pscustomobject]$row); continue }
+    $row.Fetched = $true
+    $download = Test-Download $dir $p.Commit
+    $row.Complete = $download.Complete
+    $row.MissingFromDownload = $download.Missing
+    if (-not $download.Complete) {
+        # Still converted, so the run shows what happens, but flagged: its figures are not comparable.
+        $row.Error = $download.Problem
+        Write-Warning ("{0}: {1}" -f $p.Repository, $download.Problem)
+    }
+    $projectDir = Join-Path $dir (Split-Path -Parent ($p.ProjectPath -replace '/', '\'))
+    $row.XamlFiles = @(Get-ChildItem -LiteralPath $projectDir -Recurse -Filter *.xaml -File -ErrorAction SilentlyContinue).Count
+
+    foreach ($shell in @('pwsh', 'powershell')) {
+        $tag = if ($shell -eq 'pwsh') { '7' } else { '51' }
+        $out = Join-Path $outputs "$short\$tag"
+        # Start from an empty folder, so files from an earlier run can never be counted as this run's.
+        if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+        $watch = [System.Diagnostics.Stopwatch]::StartNew()
+        $console = & $shell -NoProfile -ExecutionPolicy Bypass -File $converter -Path $projectDir -OutputPath $out 2>&1 | ForEach-Object { "$_" }
+        $watch.Stop()
+        $row["Exit$tag"] = $LASTEXITCODE
+        $row["Seconds$tag"] = [Math]::Round($watch.Elapsed.TotalSeconds, 1)
+        if ($LASTEXITCODE -ne 0 -and -not $row.Error) { $row.Error = (($console | Where-Object { $_ -notmatch '^(Wrote|See the report)' }) -join ' | ') }
+    }
+
+    $out7 = Join-Path $outputs "$short\7"
+    $out51 = Join-Path $outputs "$short\51"
+    $diagrams = @(Get-ChildItem -LiteralPath $out7 -Filter *.drawio -ErrorAction SilentlyContinue)
+    $same = $true
+    foreach ($f in $diagrams) {
+        $other = Join-Path $out51 $f.Name
+        if (-not (Test-Path -LiteralPath $other) -or (Get-FileHash -LiteralPath $f.FullName).Hash -ne (Get-FileHash -LiteralPath $other).Hash) { $same = $false }
+    }
+    $row.SameIn51And7 = $same
+
+    $report = ''
+    $reportFile = @(Get-ChildItem -LiteralPath $out7 -Filter *.conversion-report.txt -ErrorAction SilentlyContinue) | Select-Object -First 1
+    if ($reportFile) {
+        $report = [System.IO.File]::ReadAllText($reportFile.FullName)
+        $workflows = @(Get-Section $report 'Workflows converted')
+        $row.Workflows = $workflows.Count
+        $row.StateMachines = @($workflows | Where-Object { $_ -match ' - state machine:' }).Count
+        $row.Flowcharts = @($workflows | Where-Object { $_ -match ' - flowchart:' }).Count
+        $row.SummaryOnly = @($workflows | Where-Object { $_ -match 'summary page only' }).Count
+        $row.StudioLayout = @($workflows | Where-Object { $_ -match 'layout saved in Studio' }).Count
+        $row.AutoLayout = @($workflows | Where-Object { $_ -match 'laid out automatically' }).Count
+        $row.Missing = @(Get-Section $report 'Invoked workflows not found').Count
+        $row.Outside = @(Get-Section $report 'Invoked files outside the project folder').Count
+        $row.RunTime = @(Get-Section $report 'File names set at run time').Count
+        $row.UnrecognisedTypes = (@(Get-Section $report 'Activity types not recognised') | ForEach-Object { ($_ -split ' - ')[0] } | Sort-Object -Unique) -join ' '
+        $row.Warnings = @(Get-Section $report 'Warnings').Count
+        $row.Unreadable = @(Get-Section $report 'Files that could not be read').Count
+        $row.NotWorkflows = @(Get-Section $report 'Files that are not workflows').Count
+        $row.SkippedFolders = @(Get-Section $report 'Folders skipped').Count
+    }
+
+    $problems = New-Object System.Collections.Generic.List[string]
+    foreach ($f in $diagrams) {
+        try {
+            $d = Read-Drawio $f.FullName
+            foreach ($dg in $d.Doc.SelectNodes('/mxfile/diagram')) {
+                $ids = @{}
+                foreach ($c in $dg.SelectNodes('mxGraphModel/root/*')) {
+                    $cid = $c.GetAttribute('id')
+                    if ($ids.ContainsKey($cid)) { $problems.Add("duplicate id $cid") }
+                    $ids[$cid] = $true
+                }
+                foreach ($c in $dg.SelectNodes('mxGraphModel/root/mxCell[@edge="1"]')) {
+                    if (-not $ids.ContainsKey($c.GetAttribute('source')) -or -not $ids.ContainsKey($c.GetAttribute('target'))) { $problems.Add('arrow to a missing shape') }
+                }
+                foreach ($g in $dg.SelectNodes('.//mxGeometry | .//mxPoint')) {
+                    foreach ($a in @('x', 'y', 'width', 'height')) {
+                        $v = $g.GetAttribute($a)
+                        if ($v -and $v -notmatch '^-?\d+(\.\d+)?$') { $problems.Add("geometry $a=$v") }
+                    }
+                }
+                # Arrow checks apply to automatic layout only; Studio's own routes are copied as they are.
+                $name = $dg.GetAttribute('name')
+                if ($name -eq 'Project map' -or $report -match ('(?m)^  ' + [regex]::Escape($name) + '( \[main\])? - .*laid out automatically')) {
+                    foreach ($pr in (Get-ArrowProblems $dg)) { $problems.Add("$name`: $pr") }
+                }
+            }
+        }
+        catch { $problems.Add('not well-formed: ' + $_.Exception.Message) }
+    }
+    $row.CheckProblems = $problems.Count
+    $row.CheckDetails = (@($problems | Select-Object -First 5) -join ' | ')
+    $results.Add([pscustomobject]$row)
+}
+
+$csvOptions = @{ LiteralPath = (Join-Path $WorkFolder 'results.csv'); Encoding = 'UTF8' }
+if ($PSVersionTable.PSVersion.Major -lt 6) { $csvOptions.NoTypeInformation = $true }   # the default from PowerShell 6 on
+$results | Export-Csv @csvOptions
+
+# Only complete downloads that converted in both versions count towards the totals below.
+$ok = @($results | Where-Object { $_.Complete -and $_.Exit7 -eq 0 -and $_.Exit51 -eq 0 })
+$sum = { param($name) [int](($ok | Measure-Object -Property $name -Sum).Sum) }
+$incomplete = @($results | Where-Object { $_.Fetched -and -not $_.Complete })
+$lines = @(
+    "Projects listed: $($results.Count); fetched: $(@($results | Where-Object Fetched).Count); complete downloads: $(@($results | Where-Object Complete).Count)"
+    "Incomplete downloads (excluded from the totals): $($incomplete.Count)$(if ($incomplete.Count) { ' - ' + (($incomplete | ForEach-Object { $_.Repository }) -join ', ') })"
+    "Converted in both PowerShell versions: $($ok.Count)"
+    "Failures: $(@($results | Where-Object { $_.Complete -and -not ($_.Exit7 -eq 0 -and $_.Exit51 -eq 0) }).Count)"
+    "Identical output in 5.1 and 7: $(@($results | Where-Object { $_.SameIn51And7 -eq $true }).Count)"
+    "Workflows: $(& $sum 'Workflows'); state machines drawn: $(& $sum 'StateMachines'); flowcharts drawn: $(& $sum 'Flowcharts'); summary only: $(& $sum 'SummaryOnly')"
+    "Studio layout used: $(& $sum 'StudioLayout'); automatic layout: $(& $sum 'AutoLayout')"
+    "Invoked files missing: $(& $sum 'Missing'); outside the project: $(& $sum 'Outside'); set at run time: $(& $sum 'RunTime')"
+    "Unreadable files: $(& $sum 'Unreadable'); not workflows: $(& $sum 'NotWorkflows'); folders skipped: $(& $sum 'SkippedFolders'); warnings: $(& $sum 'Warnings')"
+    "Diagram check problems: $(& $sum 'CheckProblems')"
+)
+[System.IO.File]::WriteAllText((Join-Path $WorkFolder 'summary.txt'), ($lines -join "`r`n") + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+$lines | ForEach-Object { Write-Host $_ }
+Write-Host "Results: $(Join-Path $WorkFolder 'results.csv')"

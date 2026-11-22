@@ -116,6 +116,9 @@ Learned by inspecting a standard REFramework `Main.xaml` (55 KB, 486 elements). 
   - A path that leads out of the project folder (another drive, a network share, or `..` past the top) is shown as "outside the project" and is **never looked up**. A workflow can name any server, and checking such a path would make Windows contact it. By default only the file name is shown, because the full path can name a server or a user.
   - Don't use `System.IO.Path` methods on these names: on Windows PowerShell 5.1 they throw on `|`, `<`, `>` and control characters, which a workflow can contain.
 - **Studio's own folders** (`.local`, `.settings`, `.objects` and so on) start with a dot. Skip them when scanning a project.
+- **Activity properties can share names with XML properties.** UiPath's Get XML Node Attributes activity writes `Attributes="[...]"`. PowerShell lets an attribute or child element hide the XML property of the same name, so `$element.Attributes` returned that text and a whole project failed to convert (found in the November 2026 compatibility run). Always read XML properties through .NET's accessors: `$node.get_Attributes()`, `.get_LocalName()`, `.get_ChildNodes()` and so on.
+- **In C# projects, every expression carries a layout ID.** `CSharpValue` and `CSharpReference` elements (and Multiple Assign's `AssignOperation` items) have `WorkflowViewState.IdRef` attributes, so "has an IdRef" does not mean "is an activity".
+- **Real projects are mostly sequences.** In 93 public projects (639 files), 88% of workflows have a Sequence at the top level, 6% a Flowchart and 3% a State Machine. Containers nest to a median depth of 2, up to 27. See `docs/compatibility-report.md`.
 - **REFramework `Main.xaml`** is a template: states Initialization → Get Transaction Data → Process Transaction → End Process, with transitions Successful initialization, System Error, New Transaction, No Data, Successful transaction, BRE, Error. Every REFramework project has it, so it's a good first test case. The project-specific logic is in `Process.xaml` and the files it calls.
 
 ## Technical notes: draw.io format
@@ -159,6 +162,8 @@ Learned by inspecting a standard REFramework `Main.xaml` (55 KB, 486 elements). 
 | Files that aren't workflows | A file whose top element is a known activity (for example `<StateMachine>`) is drawn from that. Any other top element (`<html>`, `<Window>`) gets a page and a report entry saying it is not a workflow | Before, they were mislabelled ("state", "flowstep") and not drawn, with no explanation |
 | Errors the user can fix | One plain line and exit code 1 ("Path not found: ...") | PowerShell's own error display adds script line numbers that mean nothing to a user |
 | Damaged saved layouts | `NaN`, infinity and values beyond ±1,000,000 count as missing, so the diagram is laid out automatically | They can only come from a damaged file, and drawn as-is they broke the picture or crashed draw.io's export |
+| Compatibility testing | A pinned corpus of public projects (`tests/compatibility/corpus.csv`) and a script that downloads only their `.xaml` and `project.json` files into the temp folder and converts them (`tests/compatibility/Invoke-CompatibilityRun.ps1`). Third-party files and outputs never enter the repository | Real-world coverage without storing anyone else's workflows; a repeatable baseline before each release |
+| Multi-platform direction | Explored, not adopted. See `docs/architecture-exploration.md`: UiPath sequence support first, built around a small internal representation; another platform only if approved | Avoids a premature rewrite while keeping the option open |
 
 ## Open decisions
 
@@ -173,4 +178,5 @@ Learned by inspecting a standard REFramework `Main.xaml` (55 KB, 486 elements). 
 1. Check flowchart and switch connector keys against a real flowchart saved by Studio (put it in `private/`).
 2. Try a whole real project from `private/`, not just `Main.xaml`, to exercise the project map at size.
 3. Keep the README screenshots in `docs/images/` current: they are exported from the samples with the draw.io desktop app (`draw.io.exe -x -f png -b 16 -s 1.5 -p <page> -o docs/images/<name>.png <file>.drawio`).
-4. Later scope: sequences with automatic layout, then `-MaxDepth`, UI steps as one-line boxes, annotations as notes.
+4. Sequence support, per the roadmap in `docs/architecture-exploration.md` (milestones S0 to S5), then UI steps as one-line boxes and annotations as notes.
+5. Open reliability items from `docs/compatibility-report.md`: R4 (large project maps), R5 (label collisions on Studio layouts), R6 (noisy "not recognised" list), R7 (paths relative to the calling file).
